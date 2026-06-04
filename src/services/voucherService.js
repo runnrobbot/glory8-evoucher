@@ -18,7 +18,6 @@ import {
   increment,
 } from 'firebase/firestore';
 import QRCode from 'qrcode';
-import JsBarcode from 'jsbarcode';
 import { COLLECTIONS, DEFAULT_PAGE_SIZE, VOUCHER_STATUS, AUDIT_ACTIONS, AUDIT_MODULES } from '@/utils/constants';
 import { logAudit } from '@/utils/auditLogger';
 import { sanitizeObject } from '@/utils/sanitize';
@@ -29,31 +28,11 @@ import { sanitizeObject } from '@/utils/sanitize';
 async function generateQRCode(data) {
   try {
     return await QRCode.toDataURL(data, {
-      width: 200,
-      margin: 1,
-      color: { dark: '#0F766E', light: '#FFFFFF' },
+      width: 320,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#FFFFFF' },
     });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Generate Barcode as data URL.
- */
-function generateBarcode(data) {
-  try {
-    const canvas = document.createElement('canvas');
-    JsBarcode(canvas, data, {
-      format: 'CODE128',
-      width: 2,
-      height: 60,
-      displayValue: true,
-      fontSize: 12,
-      margin: 5,
-      lineColor: '#0F766E',
-    });
-    return canvas.toDataURL('image/png');
   } catch {
     return null;
   }
@@ -155,7 +134,6 @@ export async function createVoucher(data, currentUser) {
   const code = generateVoucherCode(prefix, year, startSeq);
 
   const qrCode = await generateQRCode(code);
-  const barcode = generateBarcode(code);
 
   const voucherData = {
     name: sanitized.name,
@@ -173,7 +151,6 @@ export async function createVoucher(data, currentUser) {
     minPurchase: Number(data.minPurchase) || 0,
     maxDiscount: Number(data.maxDiscount) || 0,
     qrCode,
-    barcode,
     backgroundUrl: data.backgroundUrl || null,
     bgPositionX: data.bgPositionX ?? 50,
     bgPositionY: data.bgPositionY ?? 50,
@@ -186,7 +163,6 @@ export async function createVoucher(data, currentUser) {
       fontFamily: 'Inter',
       fontSize: '14px',
       qrPosition: { x: 50, y: 50 },
-      barcodePosition: { x: 50, y: 80 },
     },
     isDeleted: false,
     deletedAt: null,
@@ -241,7 +217,6 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
       const seq = startSeq + i;
       const code = generateVoucherCode(prefix, year, seq);
       const qrCode = await generateQRCode(code);
-      const barcode = generateBarcode(code);
 
       const voucherData = {
         name: `${sanitized.name} #${seq}`,
@@ -259,7 +234,6 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
         minPurchase: Number(data.minPurchase) || 0,
         maxDiscount: Number(data.maxDiscount) || 0,
         qrCode,
-        barcode,
         backgroundUrl: data.backgroundUrl || null,
         bgPositionX: data.bgPositionX ?? 50,
         bgPositionY: data.bgPositionY ?? 50,
@@ -272,7 +246,6 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
           fontFamily: 'Inter',
           fontSize: '14px',
           qrPosition: { x: 50, y: 50 },
-          barcodePosition: { x: 50, y: 80 },
         },
         isDeleted: false,
         deletedAt: null,

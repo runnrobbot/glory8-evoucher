@@ -214,6 +214,71 @@ export async function copyToClipboard(text) {
   }
 }
 
+/**
+ * Render a DOM element (the voucher card) to a PNG Blob via html2canvas.
+ * Returns null on failure so callers can fall back to text-only sharing.
+ * @param {HTMLElement} element
+ * @returns {Promise<Blob|null>}
+ */
+export async function captureElementToBlob(element) {
+  if (!element) return null;
+  try {
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: null,
+      logging: false,
+    });
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Share a voucher to WhatsApp, including the rendered voucher image.
+ *
+ * Because wa.me / WhatsApp Web cannot attach an image via URL, behaviour differs
+ * by platform:
+ *  - Mobile (Web Share API with file support): share the image file + caption
+ *    natively, letting the user pick WhatsApp directly.
+ *  - Desktop / unsupported: download the voucher image and open wa.me with the
+ *    prefilled caption, so the user attaches the just-downloaded image manually.
+ *
+ * @param {Object} opts
+ * @param {HTMLElement} opts.element  - voucher card element to capture
+ * @param {string} opts.message      - caption / text body
+ * @param {string} [opts.phone]      - normalized phone (digits, e.g. 62812...)
+ * @param {string} [opts.filename]   - download filename (no extension)
+ * @returns {Promise<{shared: boolean, downloaded: boolean}>}
+ */
+export async function shareVoucherToWhatsApp({ element, message, phone = '', filename = 'voucher' }) {
+  const blob = await captureElementToBlob(element);
+  const waBase = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
+  const waUrl = `${waBase}?text=${encodeURIComponent(message)}`;
+
+  // Try native share first (mobile) — only if files are supported.
+  if (blob && navigator.canShare) {
+    const file = new File([blob], `${filename}.png`, { type: 'image/png' });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text: message });
+        return { shared: true, downloaded: false };
+      } catch {
+        // User cancelled or share failed — fall through to download flow.
+      }
+    }
+  }
+
+  // Desktop fallback: download the image, then open WhatsApp with the caption.
+  if (blob) {
+    downloadBlob(blob, `${filename}.png`);
+  }
+  window.open(waUrl, '_blank');
+  return { shared: false, downloaded: !!blob };
+}
+
 // Internal helper
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

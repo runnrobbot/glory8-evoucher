@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, Eye, Layers, Copy, Image as ImageIcon, MessageCircle } from 'lucide-react';
 import { getVouchers, createVoucher, updateVoucher, deleteVoucher, bulkGenerateVouchers } from '@/services/voucherService';
@@ -17,7 +17,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { voucherSchema, bulkGenerateSchema } from '@/utils/validators';
 import { VOUCHER_STATUS_LABELS } from '@/utils/constants';
 import { formatDate, formatCurrency, getExpirationLabel } from '@/utils/formatters';
-import { copyToClipboard } from '@/utils/exportUtils';
+import { copyToClipboard, shareVoucherToWhatsApp } from '@/utils/exportUtils';
 import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,6 +184,8 @@ function VouchersPage() {
   // ── WhatsApp share — reveal phone field, then open wa.me on submit ────────
   const [showWaField, setShowWaField] = useState(false);
   const [waPhone, setWaPhone] = useState('');
+  const [waSending, setWaSending] = useState(false);
+  const voucherCardRef = useRef(null);
 
   // ── Background state — OUTSIDE react-hook-form to bypass Zod stripping ───
   // BUG FIX: Zod's .parse() strips keys not declared in the schema, so any
@@ -350,15 +352,32 @@ function VouchersPage() {
     setWaPhone('');
   }, []);
 
-  // Open WhatsApp to the entered number with the prefilled voucher message.
-  // An empty number falls back to the WhatsApp contact picker.
-  const sendWhatsApp = useCallback(() => {
-    if (!showPreview) return;
-    const text = buildVoucherMessage(showPreview);
-    const phone = normalizePhone(waPhone);
-    const base = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
-    window.open(`${base}?text=${encodeURIComponent(text)}`, '_blank');
-  }, [showPreview, waPhone]);
+  // Share the voucher to WhatsApp INCLUDING the rendered voucher image.
+  // On mobile the image is shared natively (Web Share API); on desktop the
+  // image is downloaded and WhatsApp opens with the caption prefilled so the
+  // user can attach the downloaded image. An empty number falls back to the
+  // WhatsApp contact picker.
+  const sendWhatsApp = useCallback(async () => {
+    if (!showPreview || waSending) return;
+    setWaSending(true);
+    try {
+      const text = buildVoucherMessage(showPreview);
+      const phone = normalizePhone(waPhone);
+      const res = await shareVoucherToWhatsApp({
+        element: voucherCardRef.current,
+        message: text,
+        phone,
+        filename: `voucher-${showPreview.code}`,
+      });
+      if (res.downloaded) {
+        toastSuccess('Gambar voucher diunduh — lampirkan di WhatsApp.');
+      }
+    } catch (error) {
+      toastError(error.message || 'Gagal membagikan voucher');
+    } finally {
+      setWaSending(false);
+    }
+  }, [showPreview, waPhone, waSending]);
 
   const handleDelete = useCallback(async () => {
     if (!deletingVoucher) return;
@@ -581,102 +600,120 @@ function VouchersPage() {
       >
         {showPreview && (
           <div className="space-y-6">
-            {/* Voucher Card */}
+            {/* Voucher Card — wide rectangle, like a real voucher.
+                Captured as image for WhatsApp sharing. */}
             <div
-              className="rounded-2xl p-6 text-white relative overflow-hidden"
+              ref={voucherCardRef}
+              className="rounded-2xl relative overflow-hidden"
               style={{
-                minHeight: 200,
+                aspectRatio: '16 / 7',
                 background: showPreview.backgroundUrl
-                  ? 'transparent'
+                  ? '#ffffff'
                   : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
               }}
             >
-              {/* Background image layer */}
+              {/* Background image layer — shown at original brightness (no scrim) */}
               {showPreview.backgroundUrl && (
+                <img
+                  src={showPreview.backgroundUrl}
+                  alt=""
+                  crossOrigin="anonymous"
+                  className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+                  style={{
+                    objectPosition: `${showPreview.bgPositionX ?? 50}% ${showPreview.bgPositionY ?? 50}%`,
+                  }}
+                />
+              )}
+
+              {/* Decorative circles (only on the plain gradient, not over a banner) */}
+              {!showPreview.backgroundUrl && (
                 <>
-                  <img
-                    src={showPreview.backgroundUrl}
-                    alt=""
-                    className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
-                    style={{
-                      objectPosition: `${showPreview.bgPositionX ?? 50}% ${showPreview.bgPositionY ?? 50}%`,
-                    }}
-                  />
-                  {/* Dark scrim for text readability */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-black/50" />
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
                 </>
               )}
 
-              {/* Decorative circles */}
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+              {/* ── Content layout ──────────────────────────────────────────
+                  text color adapts: dark on a (light) banner, white on gradient.
+                  Layout (typical voucher):
+                    • top-left: voucher name + logo
+                    • below:    big discount %
+                    • below:    voucher code
+                    • below:    smaller info lines
+                  QR sits on the right, vertically centered.                    */}
+              {(() => {
+                const hasBg = !!showPreview.backgroundUrl;
+                const heading = hasBg ? 'text-slate-900' : 'text-white';
+                const sub = hasBg ? 'text-slate-600' : 'text-white/80';
+                const faint = hasBg ? 'text-slate-500' : 'text-white/70';
+                const accent = hasBg ? 'text-primary-700' : 'text-white';
+                const shadow = hasBg ? {} : { textShadow: '0 1px 3px rgba(0,0,0,0.45)' };
 
-              {/* Content */}
-              <div className="relative z-10 flex flex-col sm:flex-row gap-6">
-                <div className="flex-1">
-                  {/* Logo + label row */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-lg overflow-hidden bg-white/20 flex-shrink-0">
-                      <img
-                        src={companyLogo}
-                        alt="Logo"
-                        className="w-full h-full object-contain"
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
+                return (
+                  <div className="relative z-10 h-full p-5 sm:p-6 flex items-stretch gap-4">
+                    {/* Left / main column */}
+                    <div className="flex-1 min-w-0 flex flex-col" style={shadow}>
+                      {/* Top-left: name + logo */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className={`text-[10px] uppercase tracking-[0.3em] ${faint} mb-0.5`}>Voucher</p>
+                          <h3 className={`text-lg sm:text-xl font-bold leading-tight truncate ${heading}`}>
+                            {showPreview.name}
+                          </h3>
+                        </div>
+                        <img
+                          src={companyLogo}
+                          alt="Logo"
+                          crossOrigin="anonymous"
+                          className="h-8 w-auto object-contain flex-shrink-0"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+
+                      {/* Big discount */}
+                      <p className={`text-4xl sm:text-5xl font-black leading-none mt-2 ${accent}`}>
+                        {showPreview.discountType === 'percentage'
+                          ? `${showPreview.value}%`
+                          : formatCurrency(showPreview.value)}
+                        <span className={`text-sm font-semibold uppercase ml-2 ${sub}`}>Diskon</span>
+                      </p>
+
+                      {/* Voucher code */}
+                      <div className="mt-2">
+                        <p className={`text-[10px] uppercase tracking-wide ${faint}`}>Kode</p>
+                        <p className={`font-mono text-base sm:text-lg font-bold tracking-widest ${heading}`}>
+                          {showPreview.code}
+                        </p>
+                      </div>
+
+                      {/* Smaller info lines */}
+                      <div className={`mt-auto pt-2 space-y-0.5 ${sub}`}>
+                        <p className="text-[11px]">Campaign: {showPreview.campaignName}</p>
+                        <p className="text-[11px]">Berlaku s.d.: {formatDate(showPreview.expiredDate)}</p>
+                        {showPreview.minPurchase > 0 && (
+                          <p className="text-[11px]">Min. belanja: {formatCurrency(showPreview.minPurchase)}</p>
+                        )}
+                        {showPreview.terms && (
+                          <p className="text-[10px] italic line-clamp-1 opacity-80">{showPreview.terms}</p>
+                        )}
+                      </div>
                     </div>
-                    <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Voucher</p>
-                  </div>
 
-                  <h3 className="text-xl font-bold mb-2">{showPreview.name}</h3>
-                  {showPreview.description && (
-                    <p className="text-sm text-white/70 mb-4">{showPreview.description}</p>
-                  )}
-                  <p className="text-xs text-white/50 uppercase tracking-wide">Kode</p>
-                  <p className="font-mono text-lg font-bold tracking-widest">{showPreview.code}</p>
-                  <div className="mt-3 space-y-0.5">
-                    <p className="text-xs text-white/50">Campaign: {showPreview.campaignName}</p>
-                    <p className="text-xs text-white/50">Berlaku s.d.: {formatDate(showPreview.expiredDate)}</p>
-                    {showPreview.minPurchase > 0 && (
-                      <p className="text-xs text-white/50">Min. belanja: {formatCurrency(showPreview.minPurchase)}</p>
+                    {/* Right: QR code, vertically centered */}
+                    {showPreview.qrCode && (
+                      <div className="flex flex-col items-center justify-center gap-1.5 flex-shrink-0">
+                        <img
+                          src={showPreview.qrCode}
+                          alt="QR Code"
+                          crossOrigin="anonymous"
+                          className="w-24 h-24 sm:w-28 sm:h-28 block"
+                        />
+                        <p className={`text-[9px] ${faint}`} style={shadow}>Scan untuk validasi</p>
+                      </div>
                     )}
                   </div>
-                  {showPreview.terms && (
-                    <p className="text-xs text-white/40 mt-3 italic line-clamp-2">{showPreview.terms}</p>
-                  )}
-                </div>
-
-                <div className="flex flex-col items-center gap-3 flex-shrink-0">
-                  {/* Discount value */}
-                  <div className="text-center bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-3">
-                    <p className="text-4xl font-black leading-none">
-                      {showPreview.discountType === 'percentage'
-                        ? `${showPreview.value}%`
-                        : formatCurrency(showPreview.value)}
-                    </p>
-                    <p className="text-xs text-white/60 uppercase mt-1">Diskon</p>
-                  </div>
-
-                  {/* QR Code */}
-                  {showPreview.qrCode && (
-                    <div className="text-center">
-                      <div className="bg-white rounded-xl p-2 inline-block">
-                        <img src={showPreview.qrCode} alt="QR Code" className="w-24 h-24 block" />
-                      </div>
-                      <p className="text-[10px] text-white/50 mt-1">Scan untuk validasi</p>
-                    </div>
-                  )}
-
-                  {/* Barcode */}
-                  {showPreview.barcode && (
-                    <div className="text-center">
-                      <div className="bg-white rounded-lg p-1.5 inline-block">
-                        <img src={showPreview.barcode} alt="Barcode" className="h-10 max-w-[160px] block" />
-                      </div>
-                      <p className="text-[10px] text-white/50 mt-1">Barcode</p>
-                    </div>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
             </div>
 
             {/* Action buttons */}
@@ -712,15 +749,23 @@ function VouchersPage() {
                     autoFocus
                   />
                   <p className="text-xs text-slate-400 mt-1">
-                    Kosongkan untuk memilih kontak langsung di WhatsApp.
+                    Gambar voucher ikut dibagikan. Di HP gambar langsung ter-share;
+                    di desktop gambar diunduh lalu lampirkan di WhatsApp. Kosongkan
+                    nomor untuk memilih kontak langsung.
                   </p>
                 </div>
                 <button
                   onClick={sendWhatsApp}
-                  className="btn-primary w-full"
+                  disabled={waSending}
+                  className="btn-primary w-full disabled:opacity-60"
                   style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
                 >
-                  <MessageCircle className="w-4 h-4" /> Kirim ke WhatsApp
+                  {waSending ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <MessageCircle className="w-4 h-4" />
+                  )}
+                  {waSending ? 'Menyiapkan gambar...' : 'Kirim ke WhatsApp'}
                 </button>
               </div>
             )}

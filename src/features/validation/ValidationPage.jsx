@@ -194,10 +194,15 @@ function ValidationPage() {
         {/* QR Scanner */}
         {mode === 'scan' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-6 mb-6">
-            {/* html5-qrcode mounts its video feed inside this div */}
-            <div id="qr-reader" ref={scannerRef} className="rounded-xl overflow-hidden" />
+            {/* html5-qrcode mounts its video feed inside this div.
+                A min-height + width ensures the camera surface has room to render. */}
+            <div
+              id="qr-reader"
+              ref={scannerRef}
+              className="rounded-xl overflow-hidden mx-auto w-full max-w-sm min-h-[300px] bg-slate-900/5"
+            />
             <p className="text-sm text-slate-500 text-center mt-3">
-              Point your camera at a QR code on the voucher
+              Arahkan kamera ke QR code pada voucher
             </p>
           </motion.div>
         )}
