@@ -574,7 +574,7 @@ function VouchersPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-sm text-amber-700">
               Kode voucher akan di-generate otomatis dengan format{' '}
-              <span className="font-mono font-semibold">UR8-{new Date().getFullYear()}-XXXXXX</span>
+              <span className="font-mono font-semibold">GL8-{new Date().getFullYear()}-XXXXXX</span>
             </p>
           </div>
           <div>

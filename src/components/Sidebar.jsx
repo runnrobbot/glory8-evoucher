@@ -92,14 +92,14 @@ function Sidebar() {
         <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center bg-white">
           <img
             src={logoSrc}
-            alt="Ur8an Logo"
+            alt="Glory8 Logo"
             className="w-9 h-9 object-contain"
             onError={(e) => { e.target.src = '/logo-utama.png'; }}
           />
         </div>
         {sidebarOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <h1 className="text-base font-bold text-slate-900 leading-tight">UR8AN</h1>
+            <h1 className="text-base font-bold text-slate-900 leading-tight">GLORY8</h1>
             <p className="text-[10px] font-semibold text-primary-600 uppercase tracking-widest">E-Voucher</p>
           </motion.div>
         )}

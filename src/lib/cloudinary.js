@@ -48,7 +48,7 @@ export async function uploadToCloudinary(file, options = {}) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', UPLOAD_PRESET);
-  formData.append('folder', `ur8an-evoucher/${folder}`);
+  formData.append('folder', `glory8-evoucher/${folder}`);
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
