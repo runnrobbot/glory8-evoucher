@@ -111,7 +111,7 @@ export async function createVoucher(data, currentUser) {
   const sanitized = sanitizeObject(data);
   const year = new Date().getFullYear();
   const settingsDoc = await getDoc(doc(db, COLLECTIONS.SETTINGS, 'general'));
-  const prefix = settingsDoc.exists() ? (settingsDoc.data().voucherPrefix || 'GL8') : 'GL8';
+  const prefix = settingsDoc.exists() ? (settingsDoc.data().voucherPrefix || 'UR8') : 'UR8';
 
   const startSeq = await getNextSequence(1);
   const code = generateVoucherCode(prefix, year, startSeq);
@@ -171,7 +171,7 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
   const sanitized = sanitizeObject(data);
   const year = new Date().getFullYear();
   const settingsDoc = await getDoc(doc(db, COLLECTIONS.SETTINGS, 'general'));
-  const prefix = settingsDoc.exists() ? (settingsDoc.data().voucherPrefix || 'GL8') : 'GL8';
+  const prefix = settingsDoc.exists() ? (settingsDoc.data().voucherPrefix || 'UR8') : 'UR8';
 
   const startSeq = await getNextSequence(quantity);
   const vouchers = [];

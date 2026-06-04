@@ -20,9 +20,9 @@ export async function getSettings() {
 
 export async function initializeSettings(data) {
   await setDoc(doc(db, COLLECTIONS.SETTINGS, SETTINGS_DOC_ID), {
-    companyName: data.companyName || 'Glory8',
+    companyName: data.companyName || 'Ur8an',
     companyLogo: data.companyLogo || null,
-    voucherPrefix: data.voucherPrefix || 'GL8',
+    voucherPrefix: data.voucherPrefix || 'UR8',
     lastVoucherSequence: 0,
     isBootstrapped: true,
     createdAt: serverTimestamp(),

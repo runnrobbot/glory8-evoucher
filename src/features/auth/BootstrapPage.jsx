@@ -34,8 +34,8 @@ function BootstrapPage() {
 
       // Initialize settings
       await initializeSettings({
-        companyName: 'Glory8',
-        voucherPrefix: 'GL8',
+        companyName: 'Ur8an',
+        voucherPrefix: 'UR8',
       });
 
       setUserProfile(profile);
@@ -58,7 +58,7 @@ function BootstrapPage() {
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-3">
           <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-sm border border-slate-100">
-            <img src="/logo-utama.png" alt="Glory8" className="w-6 h-6 object-contain" />
+            <img src="/logo-utama.png" alt="Ur8an" className="w-6 h-6 object-contain" />
           </div>
           <span className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Initial Setup</span>
         </div>
@@ -92,7 +92,7 @@ function BootstrapPage() {
               {...register('email')}
               id="bootstrap-email"
               type="email"
-              placeholder="admin@glory8.com"
+              placeholder="admin@ur8an.com"
               className="input-field pl-10"
             />
           </div>

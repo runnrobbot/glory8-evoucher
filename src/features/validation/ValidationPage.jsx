@@ -65,7 +65,7 @@ function ValidationPage() {
               <input
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
-                placeholder="Enter voucher code (e.g., GL8-2026-000001)"
+                placeholder="Enter voucher code (e.g., UR8-2026-000001)"
                 className="input-field pl-11 py-3 text-lg font-mono tracking-wider"
                 autoFocus
               />

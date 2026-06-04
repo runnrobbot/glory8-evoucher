@@ -185,6 +185,7 @@ function VouchersPage() {
   const [showWaField, setShowWaField] = useState(false);
   const [waPhone, setWaPhone] = useState('');
   const [waSending, setWaSending] = useState(false);
+  const [waMode, setWaMode] = useState('web'); // 'web' | 'app'
   const voucherCardRef = useRef(null);
 
   // ── Background state — OUTSIDE react-hook-form to bypass Zod stripping ───
@@ -350,6 +351,7 @@ function VouchersPage() {
     setShowPreview(null);
     setShowWaField(false);
     setWaPhone('');
+    setWaMode('web');
   }, []);
 
   // Share the voucher to WhatsApp INCLUDING the rendered voucher image.
@@ -368,6 +370,7 @@ function VouchersPage() {
         message: text,
         phone,
         filename: `voucher-${showPreview.code}`,
+        useWeb: waMode === 'web',
       });
       if (res.downloaded) {
         toastSuccess('Gambar voucher diunduh — lampirkan di WhatsApp.');
@@ -377,7 +380,7 @@ function VouchersPage() {
     } finally {
       setWaSending(false);
     }
-  }, [showPreview, waPhone, waSending]);
+  }, [showPreview, waPhone, waSending, waMode]);
 
   const handleDelete = useCallback(async () => {
     if (!deletingVoucher) return;
@@ -544,7 +547,7 @@ function VouchersPage() {
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-sm text-amber-700">
               Kode voucher akan di-generate otomatis dengan format{' '}
-              <span className="font-mono font-semibold">GL8-{new Date().getFullYear()}-XXXXXX</span>
+              <span className="font-mono font-semibold">UR8-{new Date().getFullYear()}-XXXXXX</span>
             </p>
           </div>
           <div>
@@ -647,36 +650,39 @@ function VouchersPage() {
 
               {/* ── Content layout ────────────────────────────────────────── */}
               <div
-                className="relative z-10 h-full px-6 sm:px-8 py-4 flex flex-col items-center justify-between text-white text-center"
-                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.55)' }}
+                className="relative z-10 h-full px-6 sm:px-8 py-3 flex flex-col items-center justify-center text-white text-center"
+                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.55)', gap: '3px' }}
               >
-                {/* Logo — centre top */}
+                {/* Logo — compact */}
                 <img
                   src={companyLogo}
                   alt="Logo"
                   crossOrigin="anonymous"
-                  className="h-10 sm:h-12 w-auto object-contain"
+                  className="h-6 sm:h-7 w-auto object-contain"
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
 
-                {/* VOUCHER label + discount value */}
-                <div className="flex flex-col items-center gap-0.5">
-                  <p className="text-base sm:text-lg font-bold uppercase tracking-[0.35em] text-white/80">Voucher</p>
-                  <p className="text-5xl sm:text-6xl font-black leading-none text-white">
-                    {showPreview.discountType === 'percentage'
-                      ? `${showPreview.value}%`
-                      : formatCurrency(showPreview.value)}
-                  </p>
-                  <p className="text-base sm:text-lg font-bold uppercase tracking-[0.2em] text-white/80">Diskon</p>
-                </div>
+                {/* VOUCHER label */}
+                <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.35em] text-white/80 leading-none">Voucher</p>
 
-                {/* KODE — centre bottom, smaller */}
-                <div className="flex flex-col items-center gap-0.5">
-                  <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.3em] text-white/70">Kode</p>
-                  <p className="font-mono text-sm sm:text-base font-bold tracking-widest text-white">
-                    {showPreview.code}
-                  </p>
-                </div>
+                {/* Discount value */}
+                <p className="text-4xl sm:text-5xl font-black leading-none text-white">
+                  {showPreview.discountType === 'percentage'
+                    ? `${showPreview.value}%`
+                    : formatCurrency(showPreview.value)}
+                </p>
+
+                {/* DISKON label */}
+                <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] text-white/80 leading-none">Diskon</p>
+
+                {/* Divider */}
+                <div className="w-12 h-px bg-white/30" style={{ margin: '2px 0' }} />
+
+                {/* KODE */}
+                <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 leading-none">Kode</p>
+                <p className="font-mono text-sm sm:text-base font-bold tracking-widest text-white leading-none">
+                  {showPreview.code}
+                </p>
               </div>
             </div>
 
@@ -697,9 +703,36 @@ function VouchersPage() {
               </button>
             </div>
 
-            {/* WhatsApp phone field — revealed after clicking Share WhatsApp */}
+            {/* WhatsApp share panel — revealed after clicking Share WhatsApp */}
             {showWaField && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+
+                {/* Web / App toggle */}
+                <div className="flex gap-2 p-1 bg-slate-200 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setWaMode('web')}
+                    className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${
+                      waMode === 'web'
+                        ? 'bg-white shadow text-slate-800'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    WhatsApp Web
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWaMode('app')}
+                    className={`flex-1 py-1.5 rounded-md text-sm font-medium transition-all ${
+                      waMode === 'app'
+                        ? 'bg-white shadow text-slate-800'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    Aplikasi WA
+                  </button>
+                </div>
+
                 <div>
                   <label className="input-label">Nomor WhatsApp Tujuan</label>
                   <input
@@ -713,11 +746,13 @@ function VouchersPage() {
                     autoFocus
                   />
                   <p className="text-xs text-slate-400 mt-1">
-                    Gambar voucher ikut dibagikan. Di HP gambar langsung ter-share;
-                    di desktop gambar diunduh lalu lampirkan di WhatsApp. Kosongkan
-                    nomor untuk memilih kontak langsung.
+                    {waMode === 'web'
+                      ? 'Buka di WhatsApp Web (browser). Gambar diunduh otomatis, lalu lampirkan di chat.'
+                      : 'Buka di aplikasi WhatsApp. Di HP gambar langsung ter-share; di desktop gambar diunduh dulu.'}
+                    {' '}Kosongkan nomor untuk buka tanpa tujuan.
                   </p>
                 </div>
+
                 <button
                   onClick={sendWhatsApp}
                   disabled={waSending}
@@ -729,7 +764,7 @@ function VouchersPage() {
                   ) : (
                     <MessageCircle className="w-4 h-4" />
                   )}
-                  {waSending ? 'Menyiapkan gambar...' : 'Kirim ke WhatsApp'}
+                  {waSending ? 'Menyiapkan...' : waMode === 'web' ? 'Buka WhatsApp Web' : 'Buka Aplikasi WA'}
                 </button>
               </div>
             )}

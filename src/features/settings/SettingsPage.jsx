@@ -100,7 +100,7 @@ function SettingsPage() {
 
           <div>
             <label className="input-label">Voucher Code Prefix</label>
-            <input {...register('voucherPrefix')} className="input-field max-w-[200px]" placeholder="GL8" />
+            <input {...register('voucherPrefix')} className="input-field max-w-[200px]" placeholder="UR8" />
             {errors.voucherPrefix && <p className="input-error">{errors.voucherPrefix.message}</p>}
             <p className="text-xs text-slate-400 mt-1">Voucher codes will be formatted as: PREFIX-YEAR-SEQUENCE</p>
           </div>

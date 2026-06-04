@@ -1,8 +1,8 @@
 // ============================================
-// GLORY8 E-VOUCHER — Constants
+// UR8AN E-VOUCHER — Constants
 // ============================================
 
-export const APP_NAME = 'GLORY8 E-VOUCHER';
+export const APP_NAME = 'UR8AN E-VOUCHER';
 
 // Roles
 export const ROLES = {
@@ -183,4 +183,4 @@ export const THEME = {
 };
 
 // Voucher Code Prefix
-export const VOUCHER_PREFIX = 'GL8';
+export const VOUCHER_PREFIX = 'UR8';

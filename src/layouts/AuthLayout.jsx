@@ -23,7 +23,7 @@ function AuthLayout() {
           <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-2xl shadow-black/20 p-2">
             <img src="/logo-utama.png" alt="Glory8 Logo" className="w-full h-full object-contain" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-3">GLORY8</h1>
+          <h1 className="text-4xl font-bold text-white mb-3">UR8AN</h1>
           <div className="w-16 h-1 bg-accent-400 rounded-full mx-auto mb-4" />
           <p className="text-lg font-medium text-white/80 mb-2">E-Voucher Platform</p>
           <p className="text-sm text-white/50 max-w-sm">
@@ -62,9 +62,9 @@ function AuthLayout() {
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
             <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-slate-200 p-2">
-              <img src="/logo-utama.png" alt="Glory8 Logo" className="w-full h-full object-contain" />
+              <img src="/logo-utama.png" alt="Ur8an Logo" className="w-full h-full object-contain" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">GLORY8</h1>
+            <h1 className="text-2xl font-bold text-slate-900">UR8AN</h1>
             <p className="text-xs font-semibold text-primary-600 uppercase tracking-widest">E-Voucher</p>
           </div>
 

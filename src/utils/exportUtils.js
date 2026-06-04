@@ -239,27 +239,30 @@ export async function captureElementToBlob(element) {
 /**
  * Share a voucher to WhatsApp, including the rendered voucher image.
  *
- * Because wa.me / WhatsApp Web cannot attach an image via URL, behaviour differs
- * by platform:
- *  - Mobile (Web Share API with file support): share the image file + caption
- *    natively, letting the user pick WhatsApp directly.
- *  - Desktop / unsupported: download the voucher image and open wa.me with the
- *    prefilled caption, so the user attaches the just-downloaded image manually.
- *
  * @param {Object} opts
  * @param {HTMLElement} opts.element  - voucher card element to capture
  * @param {string} opts.message      - caption / text body
  * @param {string} [opts.phone]      - normalized phone (digits, e.g. 62812...)
  * @param {string} [opts.filename]   - download filename (no extension)
+ * @param {boolean} [opts.useWeb]    - true → open WhatsApp Web, false → wa.me (app)
  * @returns {Promise<{shared: boolean, downloaded: boolean}>}
  */
-export async function shareVoucherToWhatsApp({ element, message, phone = '', filename = 'voucher' }) {
+export async function shareVoucherToWhatsApp({ element, message, phone = '', filename = 'voucher', useWeb = false }) {
   const blob = await captureElementToBlob(element);
-  const waBase = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
-  const waUrl = `${waBase}?text=${encodeURIComponent(message)}`;
 
-  // Try native share first (mobile) — only if files are supported.
-  if (blob && navigator.canShare) {
+  // Build URL — WhatsApp Web uses web.whatsapp.com/send, app uses wa.me
+  let waUrl;
+  if (useWeb) {
+    const params = new URLSearchParams({ text: message });
+    if (phone) params.set('phone', phone);
+    waUrl = `https://web.whatsapp.com/send?${params.toString()}`;
+  } else {
+    const base = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
+    waUrl = `${base}?text=${encodeURIComponent(message)}`;
+  }
+
+  // Try native share first (mobile) — only if files are supported and NOT web mode.
+  if (!useWeb && blob && navigator.canShare) {
     const file = new File([blob], `${filename}.png`, { type: 'image/png' });
     if (navigator.canShare({ files: [file] })) {
       try {
@@ -271,7 +274,7 @@ export async function shareVoucherToWhatsApp({ element, message, phone = '', fil
     }
   }
 
-  // Desktop fallback: download the image, then open WhatsApp with the caption.
+  // Download the image then open WhatsApp (web or app).
   if (blob) {
     downloadBlob(blob, `${filename}.png`);
   }
