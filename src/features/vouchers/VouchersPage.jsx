@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Pencil, Trash2, Eye, Layers, Copy, Image as ImageIcon, MessageCircle } from 'lucide-react';
 import { getVouchers, createVoucher, updateVoucher, deleteVoucher, bulkGenerateVouchers } from '@/services/voucherService';
@@ -52,6 +52,16 @@ function normalizePhone(raw) {
   if (digits.startsWith('0')) digits = `62${digits.slice(1)}`;
   return digits;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Voucher design canvas — the card is ALWAYS rendered at this exact pixel size
+// (1600×800). For the on-screen preview it's visually scaled down with a CSS
+// transform, but the captured/shared image is taken at full resolution. This
+// guarantees the preview and the downloaded/shared PNG look identical, and lets
+// us use plain px sizing (html2canvas does NOT support cqw/cqh units).
+// ─────────────────────────────────────────────────────────────────────────────
+const VOUCHER_W = 1600;
+const VOUCHER_H = 800;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Default background state
@@ -152,7 +162,7 @@ function VoucherFields({ register, errors, campaigns, bgState, setBgState }) {
         <ImagePositionPicker
           value={bgState}
           onChange={setBgState}
-          aspectRatio="16/7"
+          aspectRatio="2/1"
           label="Upload Background"
           onUpload={async (file) => {
             const res = await uploadToCloudinary(file, { folder: UPLOAD_FOLDERS.VOUCHER_BACKGROUND });
@@ -186,7 +196,24 @@ function VouchersPage() {
   const [waPhone, setWaPhone] = useState('');
   const [waSending, setWaSending] = useState(false);
   const [waMode, setWaMode] = useState('web'); // 'web' | 'app'
-  const voucherCardRef = useRef(null);
+  const voucherCardRef = useRef(null);     // the full-size 1600×800 card (captured)
+  const previewBoxRef = useRef(null);      // the responsive container that holds it
+  const [previewScale, setPreviewScale] = useState(0.3);
+
+  // Scale the fixed-size voucher card down to fit the modal width. Runs whenever
+  // the preview opens or the window resizes so the on-screen card always fits,
+  // while the underlying element stays at true 1600×800 for a crisp capture.
+  useLayoutEffect(() => {
+    if (!showPreview) return;
+    const recompute = () => {
+      const box = previewBoxRef.current;
+      if (!box) return;
+      setPreviewScale(box.clientWidth / VOUCHER_W);
+    };
+    recompute();
+    window.addEventListener('resize', recompute);
+    return () => window.removeEventListener('resize', recompute);
+  }, [showPreview]);
 
   // ── Background state — OUTSIDE react-hook-form to bypass Zod stripping ───
   // BUG FIX: Zod's .parse() strips keys not declared in the schema, so any
@@ -603,86 +630,197 @@ function VouchersPage() {
       >
         {showPreview && (
           <div className="space-y-6">
-            {/* Voucher Card — wide rectangle, like a real voucher.
-                Captured as image for WhatsApp sharing. */}
+            {/* Responsive box — its width drives the scale factor. The actual
+                voucher card inside is a fixed 1600×800 element, scaled down via
+                CSS transform so what you see === what gets downloaded/shared. */}
             <div
-              ref={voucherCardRef}
-              className="rounded-2xl relative overflow-hidden"
+              ref={previewBoxRef}
               style={{
-                aspectRatio: '16 / 7',
-                background: showPreview.backgroundUrl
-                  ? '#ffffff'
-                  : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
+                position: 'relative',
+                width: '100%',
+                aspectRatio: `${VOUCHER_W} / ${VOUCHER_H}`,
               }}
             >
+              <div
+                ref={voucherCardRef}
+                data-voucher-card
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: `${VOUCHER_W}px`,
+                  height: `${VOUCHER_H}px`,
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: 'top left',
+                  borderRadius: `${32 / previewScale}px`,
+                  overflow: 'hidden',
+                  background: showPreview.backgroundUrl
+                    ? '#ffffff'
+                    : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
+                }}
+              >
               {/* Background image layer */}
               {showPreview.backgroundUrl && (
                 <img
                   src={showPreview.backgroundUrl}
                   alt=""
                   crossOrigin="anonymous"
-                  className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
                   style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
                     objectPosition: `${showPreview.bgPositionX ?? 50}% ${showPreview.bgPositionY ?? 50}%`,
+                    pointerEvents: 'none',
+                    userSelect: 'none',
                   }}
                 />
               )}
 
-              {/* Readability scrim — very light on the left only so text stays
-                  readable without killing the banner brightness. */}
+              {/* Readability scrim — light left-to-right so text stays legible */}
               {showPreview.backgroundUrl && (
                 <div
-                  className="absolute inset-0 pointer-events-none"
                   style={{
+                    position: 'absolute',
+                    inset: 0,
+                    pointerEvents: 'none',
                     background:
-                      'linear-gradient(90deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.05) 100%)',
+                      'linear-gradient(90deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.18) 55%, rgba(0,0,0,0.05) 100%)',
                   }}
                 />
               )}
 
-              {/* Decorative circles (only on the plain gradient, not over a banner) */}
+              {/* Decorative circles (only on the plain gradient) */}
               {!showPreview.backgroundUrl && (
                 <>
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
-                  <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+                  <div style={{ position: 'absolute', top: '-120px', right: '-120px', width: '320px', height: '320px', background: 'rgba(255,255,255,0.05)', borderRadius: '9999px', pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', bottom: '-90px', left: '-90px', width: '240px', height: '240px', background: 'rgba(255,255,255,0.05)', borderRadius: '9999px', pointerEvents: 'none' }} />
                 </>
               )}
 
-              {/* ── Content layout ────────────────────────────────────────── */}
+              {/* ── Content layout — all px values are relative to the 1600×800
+                  design canvas. Each element is absolutely positioned with an
+                  explicit top so nothing can overlap regardless of value length. */}
               <div
-                className="relative z-10 h-full px-6 sm:px-8 py-3 flex flex-col items-center justify-center text-white text-center"
-                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.55)', gap: '3px' }}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 10,
+                  color: '#fff',
+                  textAlign: 'center',
+                  textShadow: '0 2px 12px rgba(0,0,0,0.55)',
+                }}
               >
-                {/* Logo — compact */}
+                {/* Logo — top centre */}
                 <img
                   src={companyLogo}
                   alt="Logo"
                   crossOrigin="anonymous"
-                  className="h-6 sm:h-7 w-auto object-contain"
+                  style={{
+                    position: 'absolute',
+                    top: '70px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    height: '120px',
+                    width: 'auto',
+                    objectFit: 'contain',
+                  }}
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
 
                 {/* VOUCHER label */}
-                <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.35em] text-white/80 leading-none">Voucher</p>
+                <p style={{
+                  position: 'absolute',
+                  top: '220px',
+                  left: 0, right: 0,
+                  margin: 0,
+                  fontSize: '52px',
+                  fontWeight: 800,
+                  letterSpacing: '0.45em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.92)',
+                  lineHeight: 1,
+                }}>
+                  Voucher
+                </p>
 
-                {/* Discount value */}
-                <p className="text-4xl sm:text-5xl font-black leading-none text-white">
+                {/* Big discount value — vertically centred */}
+                <p style={{
+                  position: 'absolute',
+                  top: '410px',
+                  left: 0, right: 0,
+                  margin: 0,
+                  transform: 'translateY(-50%)',
+                  fontSize: '230px',
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  color: '#ffffff',
+                }}>
                   {showPreview.discountType === 'percentage'
                     ? `${showPreview.value}%`
                     : formatCurrency(showPreview.value)}
                 </p>
 
                 {/* DISKON label */}
-                <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] text-white/80 leading-none">Diskon</p>
+                <p style={{
+                  position: 'absolute',
+                  top: '548px',
+                  left: 0, right: 0,
+                  margin: 0,
+                  fontSize: '46px',
+                  fontWeight: 700,
+                  letterSpacing: '0.4em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.9)',
+                  lineHeight: 1,
+                }}>
+                  Diskon
+                </p>
 
                 {/* Divider */}
-                <div className="w-12 h-px bg-white/30" style={{ margin: '2px 0' }} />
+                <div style={{
+                  position: 'absolute',
+                  top: '640px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '150px',
+                  height: '3px',
+                  background: 'rgba(255,255,255,0.45)',
+                }} />
 
-                {/* KODE */}
-                <p className="text-[9px] sm:text-[10px] font-semibold uppercase tracking-[0.3em] text-white/70 leading-none">Kode</p>
-                <p className="font-mono text-sm sm:text-base font-bold tracking-widest text-white leading-none">
+                {/* KODE label */}
+                <p style={{
+                  position: 'absolute',
+                  top: '664px',
+                  left: 0, right: 0,
+                  margin: 0,
+                  fontSize: '30px',
+                  fontWeight: 600,
+                  letterSpacing: '0.4em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.7)',
+                  lineHeight: 1,
+                }}>
+                  Kode
+                </p>
+
+                {/* Code value */}
+                <p style={{
+                  position: 'absolute',
+                  top: '702px',
+                  left: 0, right: 0,
+                  margin: 0,
+                  fontSize: '54px',
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                  letterSpacing: '0.12em',
+                  color: '#ffffff',
+                  lineHeight: 1,
+                }}>
                   {showPreview.code}
                 </p>
+              </div>
               </div>
             </div>
 

@@ -70,46 +70,6 @@ export function exportToExcel(data, columns, filename = 'export', sheetName = 'D
 }
 
 /**
- * Export an HTML element as PDF.
- * @param {HTMLElement} element - DOM element to capture
- * @param {string} filename - File name without extension
- * @param {Object} options - PDF options
- */
-export async function exportToPDF(element, filename = 'export', options = {}) {
-  const { orientation = 'portrait', format = 'a4' } = options;
-
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    allowTaint: false,
-    logging: false,
-  });
-
-  const imgData = canvas.toDataURL('image/png');
-  const pdf = new jsPDF(orientation, 'mm', format);
-
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const imgWidth = pageWidth - 20; // 10mm margin each side
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-  let heightLeft = imgHeight;
-  let position = 10;
-
-  pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-  heightLeft -= pageHeight - 20;
-
-  while (heightLeft > 0) {
-    position = heightLeft - imgHeight + 10;
-    pdf.addPage();
-    pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight - 20;
-  }
-
-  pdf.save(`${filename}.pdf`);
-}
-
-/**
  * Export table data as PDF (data-based, not screenshot).
  */
 export function exportTableToPDF(data, columns, filename = 'export', title = '') {
@@ -169,32 +129,6 @@ export function exportTableToPDF(data, columns, filename = 'export', title = '')
 }
 
 /**
- * Print an HTML element.
- */
-export function printElement(element) {
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) return;
-
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Print</title>
-      <style>
-        body { font-family: 'Inter', system-ui, sans-serif; padding: 20px; }
-        @media print { body { padding: 0; } }
-      </style>
-    </head>
-    <body>${element.innerHTML}</body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
-  printWindow.close();
-}
-
-/**
  * Copy text to clipboard.
  */
 export async function copyToClipboard(text) {
@@ -215,7 +149,11 @@ export async function copyToClipboard(text) {
 }
 
 /**
- * Render a DOM element (the voucher card) to a PNG Blob via html2canvas.
+ * Render a DOM element to a PNG Blob via html2canvas at its TRUE (untransformed)
+ * size. The voucher card is rendered at full resolution (e.g. 1600×800) but
+ * visually scaled down with a CSS transform for the on-screen preview. We pass
+ * the real width/height and neutralise the transform during capture so the
+ * exported image always matches the design canvas exactly.
  * Returns null on failure so callers can fall back to text-only sharing.
  * @param {HTMLElement} element
  * @returns {Promise<Blob|null>}
@@ -223,12 +161,30 @@ export async function copyToClipboard(text) {
 export async function captureElementToBlob(element) {
   if (!element) return null;
   try {
+    // The element's layout box is its full design size; getBoundingClientRect
+    // would return the scaled size, so use offsetWidth/Height (layout size).
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+
     const canvas = await html2canvas(element, {
-      scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: null,
       logging: false,
+      width,
+      height,
+      windowWidth: width,
+      windowHeight: height,
+      scale: 1,
+      // Neutralise the preview's scale transform in the cloned document so the
+      // capture is rendered at full resolution.
+      onclone: (doc) => {
+        const clone = doc.querySelector('[data-voucher-card]');
+        if (clone) {
+          clone.style.transform = 'none';
+          clone.style.position = 'static';
+        }
+      },
     });
     return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   } catch {

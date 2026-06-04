@@ -80,15 +80,6 @@ export async function getVouchers({ pageSize = DEFAULT_PAGE_SIZE, lastDoc = null
 }
 
 /**
- * Get a single voucher by ID.
- */
-export async function getVoucherById(id) {
-  const snap = await getDoc(doc(db, COLLECTIONS.VOUCHERS, id));
-  if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() };
-}
-
-/**
  * Get a voucher by code.
  */
 export async function getVoucherByCode(code) {
@@ -289,25 +280,6 @@ export async function deleteVoucher(id, currentUser) {
   await logAudit({
     user: currentUser,
     action: AUDIT_ACTIONS.DELETE,
-    module: AUDIT_MODULES.VOUCHER,
-    metadata: { voucherId: id },
-  });
-}
-
-/**
- * Restore a soft-deleted voucher.
- */
-export async function restoreVoucher(id, currentUser) {
-  await updateDoc(doc(db, COLLECTIONS.VOUCHERS, id), {
-    isDeleted: false,
-    deletedAt: null,
-    deletedBy: null,
-    updatedAt: serverTimestamp(),
-  });
-
-  await logAudit({
-    user: currentUser,
-    action: AUDIT_ACTIONS.RESTORE,
     module: AUDIT_MODULES.VOUCHER,
     metadata: { voucherId: id },
   });

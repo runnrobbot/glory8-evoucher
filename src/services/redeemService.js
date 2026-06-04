@@ -2,10 +2,8 @@ import { db } from '@/lib/firebase';
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   addDoc,
-  updateDoc,
   query,
   where,
   orderBy,
@@ -147,18 +145,4 @@ export async function getRedeems({ pageSize = DEFAULT_PAGE_SIZE, lastDoc = null,
   const lastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
 
   return { redeems, lastVisible, hasMore: snapshot.docs.length === pageSize };
-}
-
-/**
- * Get redeem history for a specific voucher.
- */
-export async function getRedeemsByVoucher(voucherId) {
-  const q = query(
-    collection(db, COLLECTIONS.REDEEMS),
-    where('voucherId', '==', voucherId),
-    orderBy('redeemedAt', 'desc'),
-    limit(50)
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

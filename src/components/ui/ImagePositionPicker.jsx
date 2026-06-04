@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, memo } from 'react';
-import { Move, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Move, UploadCloud, X } from 'lucide-react';
 
 /**
  * ImagePositionPicker
@@ -10,7 +10,7 @@ import { Move, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
  * Props:
  *   value       - { url, posX, posY } — current saved position
  *   onChange    - fn({ url, posX, posY }) — called on change
- *   aspectRatio - CSS aspect-ratio string, default "16/6" (banner)
+ *   aspectRatio - CSS aspect-ratio string, default "2/1" (1600×800 voucher)
  *   folder      - Cloudinary upload folder
  *   label       - Upload button label
  *   onUpload    - async fn(file) => url — handles the actual upload
@@ -18,7 +18,7 @@ import { Move, UploadCloud, X, ZoomIn, ZoomOut } from 'lucide-react';
 const ImagePositionPicker = memo(function ImagePositionPicker({
   value = { url: '', posX: 50, posY: 50 },
   onChange,
-  aspectRatio = '16/6',
+  aspectRatio = '2/1',
   label = 'Upload Image',
   onUpload,
   uploadingText = 'Uploading...',
