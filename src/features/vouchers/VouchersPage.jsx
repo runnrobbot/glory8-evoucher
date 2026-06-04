@@ -1,28 +1,64 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, Eye, Layers, Copy } from 'lucide-react';
+import { Plus, Pencil, Trash2, Eye, Layers, Copy, Image as ImageIcon, MessageCircle } from 'lucide-react';
 import { getVouchers, createVoucher, updateVoucher, deleteVoucher, bulkGenerateVouchers } from '@/services/voucherService';
 import { getActiveCampaigns } from '@/services/campaignService';
+import { getSettings } from '@/services/settingsService';
 import useAuthStore from '@/store/authStore';
 import { usePermission } from '@/hooks/usePermission';
 import DataTable from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import StatusBadge from '@/components/ui/StatusBadge';
+import ImagePositionPicker from '@/components/ui/ImagePositionPicker';
 import { toastSuccess, toastError } from '@/components/ui/Toast';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { voucherSchema, bulkGenerateSchema } from '@/utils/validators';
-import { VOUCHER_STATUS_LABELS, CAMPAIGN_STATUS_LABELS } from '@/utils/constants';
+import { VOUCHER_STATUS_LABELS } from '@/utils/constants';
 import { formatDate, formatCurrency, getExpirationLabel } from '@/utils/formatters';
-import { copyToClipboard, shareViaWhatsApp } from '@/utils/exportUtils';
+import { copyToClipboard } from '@/utils/exportUtils';
+import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared voucher form fields (used by both single and bulk modals).
-// NOTE: This renders ONLY the fields — NOT a <form> wrapper.
-// The parent modal provides its own <form onSubmit=...>.
+// Share via WhatsApp — opens wa.me broadcast link, no phone number required.
 // ─────────────────────────────────────────────────────────────────────────────
-function VoucherFields({ register, errors, campaigns }) {
+function shareVoucher(voucher) {
+  const value = voucher.discountType === 'percentage'
+    ? `${voucher.value}%`
+    : `Rp ${Number(voucher.value).toLocaleString('id-ID')}`;
+  const expiry = voucher.expiredDate?.toDate
+    ? voucher.expiredDate.toDate().toLocaleDateString('id-ID')
+    : new Date(voucher.expiredDate).toLocaleDateString('id-ID');
+
+  const text = [
+    `🎟️ *${voucher.name}*`,
+    ``,
+    `Diskon: *${value}*`,
+    `Kode: \`${voucher.code}\``,
+    `Berlaku s.d.: ${expiry}`,
+    voucher.description ? `\n${voucher.description}` : '',
+    voucher.terms ? `\n_${voucher.terms}_` : '',
+  ].filter(Boolean).join('\n');
+
+  // wa.me without phone → WhatsApp share sheet (no contact field prompt)
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Default background state
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_BG = { url: '', posX: 50, posY: 50 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared voucher form fields (NO <form> wrapper — parent provides it).
+//
+// KEY FIX: The background image state is managed OUTSIDE react-hook-form using
+// a plain useState. This is necessary because Zod strips unknown fields before
+// the onSubmit handler receives them, so Controller('voucherBackground') would
+// always deliver an empty value. The parent passes bgState + setBgState as props.
+// ─────────────────────────────────────────────────────────────────────────────
+function VoucherFields({ register, errors, campaigns, bgState, setBgState }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -35,13 +71,9 @@ function VoucherFields({ register, errors, campaigns }) {
           <label className="input-label">Campaign</label>
           <select {...register('campaignId')} className="input-field">
             <option value="">— Select Campaign —</option>
-            {campaigns.length === 0 && (
-              <option disabled>No campaigns available</option>
-            )}
+            {campaigns.length === 0 && <option disabled>No campaigns available</option>}
             {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.status})
-              </option>
+              <option key={c.id} value={c.id}>{c.name} ({c.status})</option>
             ))}
           </select>
           {errors.campaignId && <p className="input-error">{errors.campaignId.message}</p>}
@@ -101,6 +133,25 @@ function VoucherFields({ register, errors, campaigns }) {
         <label className="input-label">Terms & Conditions</label>
         <textarea {...register('terms')} className="input-field" rows={2} placeholder="Terms and conditions..." />
       </div>
+
+      {/* ── Background Image (state lives outside RHF to bypass Zod stripping) */}
+      <div>
+        <label className="input-label flex items-center gap-2">
+          <ImageIcon className="w-4 h-4 text-slate-400" />
+          Voucher Background Image
+          <span className="text-xs font-normal text-slate-400">(opsional — tampil sebagai background voucher)</span>
+        </label>
+        <ImagePositionPicker
+          value={bgState}
+          onChange={setBgState}
+          aspectRatio="16/7"
+          label="Upload Background"
+          onUpload={async (file) => {
+            const res = await uploadToCloudinary(file, { folder: UPLOAD_FOLDERS.VOUCHER_BACKGROUND });
+            return res.url;
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -122,6 +173,14 @@ function VouchersPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [campaignFilter, setCampaignFilter] = useState('');
 
+  // ── Background state — OUTSIDE react-hook-form to bypass Zod stripping ───
+  // BUG FIX: Zod's .parse() strips keys not declared in the schema, so any
+  // Controller field named 'voucherBackground' (not in schema) is lost before
+  // onSubmit fires. These two separate useState values are read directly in
+  // the submit handlers, bypassing Zod entirely.
+  const [singleBg, setSingleBg] = useState(DEFAULT_BG);  // single voucher form
+  const [bulkBg, setBulkBg] = useState(DEFAULT_BG);      // bulk generate form
+
   // ── Data queries ────────────────────────────────────────────────────────
   const { data: vouchersData, isLoading } = useQuery({
     queryKey: ['vouchers', statusFilter, campaignFilter],
@@ -140,6 +199,14 @@ function VouchersPage() {
     queryFn: getActiveCampaigns,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Company logo for voucher preview
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettings,
+    staleTime: 10 * 60 * 1000,
+  });
+  const companyLogo = settings?.companyLogo || '/logo-utama.png';
 
   // ── Single voucher form ──────────────────────────────────────────────────
   const {
@@ -160,6 +227,7 @@ function VouchersPage() {
   // ── Handlers ─────────────────────────────────────────────────────────────
   const openCreate = useCallback(() => {
     setEditingVoucher(null);
+    setSingleBg(DEFAULT_BG);  // reset background state
     reset({
       name: '', campaignId: '', description: '', value: '',
       discountType: 'percentage', terms: '', startDate: '', expiredDate: '',
@@ -170,6 +238,12 @@ function VouchersPage() {
 
   const openEdit = useCallback((v) => {
     setEditingVoucher(v);
+    // Restore background state from saved voucher data
+    setSingleBg({
+      url: v.backgroundUrl || '',
+      posX: v.bgPositionX ?? 50,
+      posY: v.bgPositionY ?? 50,
+    });
     const start = v.startDate?.toDate ? v.startDate.toDate() : new Date(v.startDate);
     const exp = v.expiredDate?.toDate ? v.expiredDate.toDate() : new Date(v.expiredDate);
     reset({
@@ -189,6 +263,7 @@ function VouchersPage() {
   }, [reset]);
 
   const openBulk = useCallback(() => {
+    setBulkBg(DEFAULT_BG);  // reset background state
     resetBulk({
       quantity: 10,
       name: '', campaignId: '', description: '', value: '',
@@ -203,7 +278,14 @@ function VouchersPage() {
     setIsSubmitting(true);
     try {
       const campaign = campaigns.find((c) => c.id === data.campaignId);
-      const enriched = { ...data, campaignName: campaign?.name || '' };
+      // Read background from separate state — NOT from Zod-parsed data
+      const enriched = {
+        ...data,
+        campaignName: campaign?.name || '',
+        backgroundUrl: singleBg.url || null,
+        bgPositionX: singleBg.posX ?? 50,
+        bgPositionY: singleBg.posY ?? 50,
+      };
       if (editingVoucher) {
         await updateVoucher(editingVoucher.id, enriched, userProfile);
         toastSuccess('Voucher updated');
@@ -218,7 +300,7 @@ function VouchersPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, editingVoucher, campaigns, userProfile, queryClient]);
+  }, [isSubmitting, editingVoucher, campaigns, userProfile, queryClient, singleBg]);
 
   const onBulkSubmit = useCallback(async (data) => {
     if (isSubmitting) return;
@@ -227,9 +309,17 @@ function VouchersPage() {
       const campaign = campaigns.find((c) => c.id === data.campaignId);
       if (!data.campaignId || !campaign) {
         toastError('Please select a campaign before generating vouchers.');
+        setIsSubmitting(false);
         return;
       }
-      const enriched = { ...data, campaignName: campaign.name };
+      // Read background from separate state — NOT from Zod-parsed data
+      const enriched = {
+        ...data,
+        campaignName: campaign.name,
+        backgroundUrl: bulkBg.url || null,
+        bgPositionX: bulkBg.posX ?? 50,
+        bgPositionY: bulkBg.posY ?? 50,
+      };
       const result = await bulkGenerateVouchers(enriched, Number(data.quantity), userProfile);
       toastSuccess(`Successfully generated ${result.length} vouchers`);
       setShowBulk(false);
@@ -239,7 +329,7 @@ function VouchersPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, campaigns, userProfile, queryClient]);
+  }, [isSubmitting, campaigns, userProfile, queryClient, bulkBg]);
 
   const handleDelete = useCallback(async () => {
     if (!deletingVoucher) return;
@@ -321,7 +411,6 @@ function VouchersPage() {
           <p className="page-subtitle">Manage voucher codes</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Status filter */}
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -332,8 +421,6 @@ function VouchersPage() {
               <option key={k} value={k}>{v}</option>
             ))}
           </select>
-
-          {/* Campaign filter */}
           <select
             value={campaignFilter}
             onChange={(e) => setCampaignFilter(e.target.value)}
@@ -344,7 +431,6 @@ function VouchersPage() {
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-
           {checkPermission('vouchers.generate') && (
             <button onClick={openBulk} className="btn-secondary">
               <Layers className="w-4 h-4" /> Bulk Generate
@@ -378,7 +464,13 @@ function VouchersPage() {
         size="lg"
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <VoucherFields register={register} errors={errors} campaigns={campaigns} />
+          <VoucherFields
+            register={register}
+            errors={errors}
+            campaigns={campaigns}
+            bgState={singleBg}
+            setBgState={setSingleBg}
+          />
           <div className="flex gap-3 pt-4 border-t border-slate-100">
             <button type="button" onClick={() => setShowForm(false)} className="btn-secondary flex-1">
               Cancel
@@ -400,18 +492,13 @@ function VouchersPage() {
         title="Bulk Generate Vouchers"
         size="lg"
       >
-        {/* IMPORTANT: Only ONE <form> here. Previously there were two nested forms
-            (outer + renderVoucherForm) which caused double-submit and broken behaviour. */}
         <form onSubmit={handleBulk(onBulkSubmit)} className="space-y-4">
-          {/* Info banner */}
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
             <p className="text-sm text-amber-700">
-              Voucher codes will be auto-generated with the format{' '}
+              Kode voucher akan di-generate otomatis dengan format{' '}
               <span className="font-mono font-semibold">GL8-{new Date().getFullYear()}-XXXXXX</span>
             </p>
           </div>
-
-          {/* Quantity — specific to bulk mode only */}
           <div>
             <label className="input-label">Quantity <span className="text-slate-400 font-normal">(max 500)</span></label>
             <input
@@ -424,18 +511,20 @@ function VouchersPage() {
             />
             {bulkErrors.quantity && <p className="input-error">{bulkErrors.quantity.message}</p>}
           </div>
-
-          {/* Shared voucher fields (no nested <form>) */}
-          <VoucherFields register={regBulk} errors={bulkErrors} campaigns={campaigns} />
-
+          <VoucherFields
+            register={regBulk}
+            errors={bulkErrors}
+            campaigns={campaigns}
+            bgState={bulkBg}
+            setBgState={setBulkBg}
+          />
           {campaigns.length === 0 && !campaignsLoading && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3">
               <p className="text-sm text-red-700">
-                ⚠️ No campaigns found. Please create a campaign first before generating vouchers.
+                ⚠️ Belum ada campaign. Buat campaign terlebih dahulu sebelum generate voucher.
               </p>
             </div>
           )}
-
           <div className="flex gap-3 pt-4 border-t border-slate-100">
             <button type="button" onClick={() => setShowBulk(false)} className="btn-secondary flex-1">
               Cancel
@@ -454,7 +543,7 @@ function VouchersPage() {
         </form>
       </Modal>
 
-      {/* ── Voucher Preview Modal ────────────────────────────────────────── */}
+      {/* ── Voucher Preview Modal ─────────────────────────────────────────── */}
       <Modal
         isOpen={!!showPreview}
         onClose={() => setShowPreview(null)}
@@ -463,52 +552,118 @@ function VouchersPage() {
       >
         {showPreview && (
           <div className="space-y-6">
-            <div className="bg-gradient-to-br from-primary-700 via-primary-800 to-primary-900 rounded-2xl p-6 text-white relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16" />
-              <div className="absolute bottom-0 left-0 w-24 h-24 bg-accent-500/10 rounded-full -ml-12 -mb-12" />
+            {/* Voucher Card */}
+            <div
+              className="rounded-2xl p-6 text-white relative overflow-hidden"
+              style={{
+                minHeight: 200,
+                background: showPreview.backgroundUrl
+                  ? 'transparent'
+                  : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
+              }}
+            >
+              {/* Background image layer */}
+              {showPreview.backgroundUrl && (
+                <>
+                  <img
+                    src={showPreview.backgroundUrl}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+                    style={{
+                      objectPosition: `${showPreview.bgPositionX ?? 50}% ${showPreview.bgPositionY ?? 50}%`,
+                    }}
+                  />
+                  {/* Dark scrim for text readability */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-black/50" />
+                </>
+              )}
+
+              {/* Decorative circles */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+
+              {/* Content */}
               <div className="relative z-10 flex flex-col sm:flex-row gap-6">
                 <div className="flex-1">
-                  <p className="text-xs text-white/60 uppercase tracking-wider mb-1">Voucher</p>
+                  {/* Logo + label row */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-lg overflow-hidden bg-white/20 flex-shrink-0">
+                      <img
+                        src={companyLogo}
+                        alt="Logo"
+                        className="w-full h-full object-contain"
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                    <p className="text-xs text-white/70 uppercase tracking-wider font-medium">Voucher</p>
+                  </div>
+
                   <h3 className="text-xl font-bold mb-2">{showPreview.name}</h3>
-                  <p className="text-sm text-white/70 mb-4">{showPreview.description}</p>
-                  <p className="text-xs text-white/50">Code</p>
-                  <p className="font-mono text-lg font-bold">{showPreview.code}</p>
-                  <p className="text-xs text-white/50 mt-3">Campaign: {showPreview.campaignName}</p>
-                  <p className="text-xs text-white/50">Expires: {formatDate(showPreview.expiredDate)}</p>
+                  {showPreview.description && (
+                    <p className="text-sm text-white/70 mb-4">{showPreview.description}</p>
+                  )}
+                  <p className="text-xs text-white/50 uppercase tracking-wide">Kode</p>
+                  <p className="font-mono text-lg font-bold tracking-widest">{showPreview.code}</p>
+                  <div className="mt-3 space-y-0.5">
+                    <p className="text-xs text-white/50">Campaign: {showPreview.campaignName}</p>
+                    <p className="text-xs text-white/50">Berlaku s.d.: {formatDate(showPreview.expiredDate)}</p>
+                    {showPreview.minPurchase > 0 && (
+                      <p className="text-xs text-white/50">Min. belanja: {formatCurrency(showPreview.minPurchase)}</p>
+                    )}
+                  </div>
                   {showPreview.terms && (
-                    <p className="text-xs text-white/40 mt-3 italic">{showPreview.terms}</p>
+                    <p className="text-xs text-white/40 mt-3 italic line-clamp-2">{showPreview.terms}</p>
                   )}
                 </div>
-                <div className="flex flex-col items-center gap-3">
-                  <div className="text-center">
-                    <p className="text-4xl font-black">
+
+                <div className="flex flex-col items-center gap-3 flex-shrink-0">
+                  {/* Discount value */}
+                  <div className="text-center bg-white/10 backdrop-blur-sm rounded-2xl px-4 py-3">
+                    <p className="text-4xl font-black leading-none">
                       {showPreview.discountType === 'percentage'
                         ? `${showPreview.value}%`
                         : formatCurrency(showPreview.value)}
                     </p>
-                    <p className="text-xs text-white/60 uppercase">Discount</p>
+                    <p className="text-xs text-white/60 uppercase mt-1">Diskon</p>
                   </div>
+
+                  {/* QR Code */}
                   {showPreview.qrCode && (
-                    <img src={showPreview.qrCode} alt="QR" className="w-24 h-24 rounded-xl bg-white p-1" />
+                    <div className="text-center">
+                      <div className="bg-white rounded-xl p-2 inline-block">
+                        <img src={showPreview.qrCode} alt="QR Code" className="w-24 h-24 block" />
+                      </div>
+                      <p className="text-[10px] text-white/50 mt-1">Scan untuk validasi</p>
+                    </div>
                   )}
+
+                  {/* Barcode */}
                   {showPreview.barcode && (
-                    <img src={showPreview.barcode} alt="Barcode" className="h-12 bg-white rounded-lg p-1" />
+                    <div className="text-center">
+                      <div className="bg-white rounded-lg p-1.5 inline-block">
+                        <img src={showPreview.barcode} alt="Barcode" className="h-10 max-w-[160px] block" />
+                      </div>
+                      <p className="text-[10px] text-white/50 mt-1">Barcode</p>
+                    </div>
                   )}
                 </div>
               </div>
             </div>
+
+            {/* Action buttons */}
             <div className="flex gap-3">
               <button
-                onClick={() => { copyToClipboard(showPreview.code); toastSuccess('Code copied!'); }}
+                onClick={() => { copyToClipboard(showPreview.code); toastSuccess('Kode disalin!'); }}
                 className="btn-secondary flex-1"
               >
-                <Copy className="w-4 h-4" /> Copy Code
+                <Copy className="w-4 h-4" /> Salin Kode
               </button>
               <button
-                onClick={() => shareViaWhatsApp(`Check out this voucher: ${showPreview.code} - ${showPreview.name}`, '')}
+                onClick={() => shareVoucher(showPreview)}
                 className="btn-primary flex-1"
+                style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
               >
-                Share via WhatsApp
+                <MessageCircle className="w-4 h-4" /> Share WhatsApp
               </button>
             </div>
           </div>

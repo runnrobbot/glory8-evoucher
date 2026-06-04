@@ -85,6 +85,9 @@ export const voucherSchema = z.object({
   usageLimit: z.coerce.number().int().min(1, 'Usage limit must be at least 1'),
   minPurchase: positiveNumber('Min Purchase').default(0),
   maxDiscount: positiveNumber('Max Discount').default(0),
+  backgroundUrl: optionalString,
+  bgPositionX: z.coerce.number().min(0).max(100).default(50),
+  bgPositionY: z.coerce.number().min(0).max(100).default(50),
 }).refine((data) => {
   if (data.startDate && data.expiredDate) {
     return new Date(data.expiredDate) > new Date(data.startDate);
@@ -109,6 +112,9 @@ export const bulkGenerateSchema = z.object({
   minPurchase: positiveNumber('Min Purchase').default(0),
   maxDiscount: positiveNumber('Max Discount').default(0),
   quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1').max(500, 'Maximum 500 vouchers per batch'),
+  backgroundUrl: optionalString,
+  bgPositionX: z.coerce.number().min(0).max(100).default(50),
+  bgPositionY: z.coerce.number().min(0).max(100).default(50),
 });
 
 // Redeem

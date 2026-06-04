@@ -6,19 +6,32 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate, formatCurrency } from '@/utils/formatters';
 import { toastError } from '@/components/ui/Toast';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Result config
+// ─────────────────────────────────────────────────────────────────────────────
+const RESULT_CONFIG = {
+  valid:            { icon: CheckCircle,  color: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Valid Voucher' },
+  invalid:          { icon: XCircle,      color: 'text-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     label: 'Invalid Voucher' },
+  expired:          { icon: Clock,        color: 'text-amber-500',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Expired Voucher' },
+  used:             { icon: AlertCircle,  color: 'text-blue-500',    bg: 'bg-blue-50',    border: 'border-blue-200',    label: 'Used Voucher' },
+  suspended:        { icon: XCircle,      color: 'text-orange-500',  bg: 'bg-orange-50',  border: 'border-orange-200',  label: 'Suspended' },
+  campaign_inactive:{ icon: AlertCircle,  color: 'text-amber-500',   bg: 'bg-amber-50',   border: 'border-amber-200',   label: 'Campaign Inactive' },
+};
+
 function ValidationPage() {
   const [mode, setMode] = useState('code'); // 'code' | 'scan'
   const [code, setCode] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [result, setResult] = useState(null);
-  const scannerRef = useRef(null);
-  const html5QrCodeRef = useRef(null);
+
+  const scannerRef = useRef(null);      // DOM div ref
+  const scannerObjRef = useRef(null);   // Html5Qrcode instance
+  const isRunningRef = useRef(false);   // Guard — true only after scanner.start() resolves
 
   const handleValidate = useCallback(async (voucherCode) => {
     if (!voucherCode?.trim() || isValidating) return;
     setIsValidating(true);
     setResult(null);
-
     try {
       const res = await validateVoucher(voucherCode.trim());
       setResult(res);
@@ -34,77 +47,125 @@ function ValidationPage() {
     handleValidate(code);
   }, [code, handleValidate]);
 
-  // QR Scanner
+  // ── QR Scanner lifecycle ─────────────────────────────────────────────────
+  //
+  // ROOT CAUSE OF THE CRASH:
+  //   scanner.stop() was called in the cleanup BEFORE scanner.start() had
+  //   resolved (async race). Html5Qrcode throws "Cannot stop, scanner is not
+  //   running or paused" when stop() is called before start() completes.
+  //   This unhandled error propagated to React Router's error boundary and
+  //   crashed the entire page.
+  //
+  // FIX:
+  //   isRunningRef tracks whether start() has successfully returned.
+  //   cleanup only calls stop() when isRunningRef.current === true.
+  //   A separate `cancelled` flag prevents start() from running after
+  //   the effect has already been torn down (StrictMode double-invoke).
+  //
   useEffect(() => {
     if (mode !== 'scan') {
-      if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.stop().catch(() => {});
-        html5QrCodeRef.current = null;
+      // Switching away from scan — stop only if actually running
+      if (scannerObjRef.current && isRunningRef.current) {
+        scannerObjRef.current.stop().catch(() => {});
+        isRunningRef.current = false;
+        scannerObjRef.current = null;
       }
       return;
     }
 
-    let scanner = null;
+    let cancelled = false;
 
-    const initScanner = async () => {
+    const startScanner = async () => {
       try {
         const { Html5Qrcode } = await import('html5-qrcode');
-        scanner = new Html5Qrcode('qr-reader');
-        html5QrCodeRef.current = scanner;
+
+        // StrictMode may have cancelled this effect already
+        if (cancelled) return;
+
+        const scanner = new Html5Qrcode('qr-reader');
+        scannerObjRef.current = scanner;
 
         await scanner.start(
           { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 250, height: 250 } },
-          (decodedText) => {
+          async (decodedText) => {
+            // Stop the camera first, then validate
+            if (isRunningRef.current) {
+              isRunningRef.current = false;
+              try { await scanner.stop(); } catch { /* ignore */ }
+            }
             handleValidate(decodedText);
-            scanner.stop().catch(() => {});
           },
-          () => {},
+          () => { /* QR not found in frame — ignore */ }
         );
-      } catch (error) {
-        toastError('Camera access denied or not available');
-        setMode('code');
+
+        // Mark as running ONLY after start() resolves
+        if (!cancelled) {
+          isRunningRef.current = true;
+        } else {
+          // Effect was cancelled while start() was in-flight — stop immediately
+          scanner.stop().catch(() => {});
+        }
+      } catch (err) {
+        if (!cancelled) {
+          toastError('Camera access denied or not available');
+          setMode('code');
+        }
       }
     };
 
-    initScanner();
+    startScanner();
 
     return () => {
-      if (scanner) {
-        scanner.stop().catch(() => {});
+      cancelled = true;
+      // Safe to call stop only if scanner has confirmed it started
+      if (scannerObjRef.current && isRunningRef.current) {
+        scannerObjRef.current.stop().catch(() => {});
+        isRunningRef.current = false;
       }
+      scannerObjRef.current = null;
     };
-  }, [mode, handleValidate]);
-
-  const resultConfig = {
-    valid: { icon: CheckCircle, color: 'text-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-200', label: 'Valid Voucher' },
-    invalid: { icon: XCircle, color: 'text-red-500', bg: 'bg-red-50', border: 'border-red-200', label: 'Invalid Voucher' },
-    expired: { icon: Clock, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Expired Voucher' },
-    used: { icon: AlertCircle, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200', label: 'Used Voucher' },
-    suspended: { icon: XCircle, color: 'text-orange-500', bg: 'bg-orange-50', border: 'border-orange-200', label: 'Suspended' },
-    campaign_inactive: { icon: AlertCircle, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200', label: 'Campaign Inactive' },
-  };
+  // handleValidate is stable (useCallback with isValidating dep) — ok to include
+  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="page-container">
       <div className="page-header">
-        <div><h1 className="page-title">Validate Voucher</h1><p className="page-subtitle">Verify voucher code or scan QR</p></div>
+        <div>
+          <h1 className="page-title">Validate Voucher</h1>
+          <p className="page-subtitle">Verify voucher code or scan QR</p>
+        </div>
       </div>
 
       <div className="max-w-2xl mx-auto">
         {/* Mode Toggle */}
         <div className="flex gap-2 mb-6 p-1 bg-slate-100 rounded-xl">
-          <button onClick={() => setMode('code')} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${mode === 'code' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'}`}>
+          <button
+            onClick={() => setMode('code')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              mode === 'code' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
             <Keyboard className="w-4 h-4" /> Enter Code
           </button>
-          <button onClick={() => setMode('scan')} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${mode === 'scan' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'}`}>
+          <button
+            onClick={() => setMode('scan')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
+              mode === 'scan' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
             <Camera className="w-4 h-4" /> Scan QR
           </button>
         </div>
 
         {/* Code Input */}
         {mode === 'code' && (
-          <motion.form initial={{ opacity: 0 }} animate={{ opacity: 1 }} onSubmit={handleCodeSubmit} className="card p-6 mb-6">
+          <motion.form
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            onSubmit={handleCodeSubmit}
+            className="card p-6 mb-6"
+          >
             <div className="flex gap-3">
               <div className="flex-1 relative">
                 <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -116,8 +177,15 @@ function ValidationPage() {
                   autoFocus
                 />
               </div>
-              <button type="submit" disabled={!code.trim() || isValidating} className="btn-primary px-6 py-3">
-                {isValidating ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Search className="w-5 h-5" />}
+              <button
+                type="submit"
+                disabled={!code.trim() || isValidating}
+                className="btn-primary px-6 py-3"
+              >
+                {isValidating
+                  ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <Search className="w-5 h-5" />
+                }
               </button>
             </div>
           </motion.form>
@@ -126,18 +194,26 @@ function ValidationPage() {
         {/* QR Scanner */}
         {mode === 'scan' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-6 mb-6">
+            {/* html5-qrcode mounts its video feed inside this div */}
             <div id="qr-reader" ref={scannerRef} className="rounded-xl overflow-hidden" />
-            <p className="text-sm text-slate-500 text-center mt-3">Point your camera at a QR code</p>
+            <p className="text-sm text-slate-500 text-center mt-3">
+              Point your camera at a QR code on the voucher
+            </p>
           </motion.div>
         )}
 
         {/* Result */}
         <AnimatePresence mode="wait">
           {result && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className={`card p-6 border-2 ${resultConfig[result.result]?.border || 'border-slate-200'}`}>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className={`card p-6 border-2 ${RESULT_CONFIG[result.result]?.border || 'border-slate-200'}`}
+            >
               <div className="flex items-center gap-4 mb-4">
                 {(() => {
-                  const config = resultConfig[result.result] || resultConfig.invalid;
+                  const config = RESULT_CONFIG[result.result] || RESULT_CONFIG.invalid;
                   const Icon = config.icon;
                   return (
                     <>
@@ -152,6 +228,7 @@ function ValidationPage() {
                   );
                 })()}
               </div>
+
               {result.voucher && (
                 <div className="bg-slate-50 rounded-xl p-4 space-y-2">
                   <div className="grid grid-cols-2 gap-2 text-sm">

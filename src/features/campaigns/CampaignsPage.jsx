@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Pencil, Trash2, CheckCircle, Ban, Eye, Megaphone } from 'lucide-react';
+import { Plus, Pencil, Trash2, CheckCircle, Ban } from 'lucide-react';
 import { getCampaigns, createCampaign, updateCampaign, approveCampaign, suspendCampaign, deleteCampaign } from '@/services/campaignService';
 import useAuthStore from '@/store/authStore';
 import { usePermission } from '@/hooks/usePermission';
@@ -8,14 +8,19 @@ import DataTable from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import StatusBadge from '@/components/ui/StatusBadge';
-import FileUpload from '@/components/ui/FileUpload';
+import ImagePositionPicker from '@/components/ui/ImagePositionPicker';
 import { toastSuccess, toastError } from '@/components/ui/Toast';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { campaignSchema } from '@/utils/validators';
 import { CAMPAIGN_STATUS_LABELS, CAMPAIGN_STATUS } from '@/utils/constants';
 import { formatDate } from '@/utils/formatters';
-import { UPLOAD_FOLDERS } from '@/lib/cloudinary';
+import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Default banner state
+// ─────────────────────────────────────────────────────────────────────────────
+const DEFAULT_BANNER = { url: '', posX: 50, posY: 50 };
 
 function CampaignsPage() {
   const queryClient = useQueryClient();
@@ -27,24 +32,36 @@ function CampaignsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
 
+  // ── Banner state — OUTSIDE react-hook-form to bypass Zod stripping ───────
+  // campaignSchema doesn't include bannerImage as an object, so Controller
+  // would have its value stripped. We track it separately.
+  const [bannerState, setBannerState] = useState(DEFAULT_BANNER);
+
   const { data: campaignsData, isLoading } = useQuery({
     queryKey: ['campaigns', statusFilter],
     queryFn: () => getCampaigns({ pageSize: 100, filters: { status: statusFilter || undefined } }),
     staleTime: 2 * 60 * 1000,
   });
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, formState: { errors } } = useForm({
     resolver: zodResolver(campaignSchema),
   });
 
   const openCreate = useCallback(() => {
     setEditingCampaign(null);
+    setBannerState(DEFAULT_BANNER);
     reset({ name: '', code: '', description: '', bannerUrl: '', startDate: '', endDate: '', status: CAMPAIGN_STATUS.DRAFT });
     setShowForm(true);
   }, [reset]);
 
   const openEdit = useCallback((campaign) => {
     setEditingCampaign(campaign);
+    // Restore saved banner state
+    setBannerState({
+      url: campaign.bannerUrl || '',
+      posX: campaign.bannerPositionX ?? 50,
+      posY: campaign.bannerPositionY ?? 50,
+    });
     const start = campaign.startDate?.toDate ? campaign.startDate.toDate() : new Date(campaign.startDate);
     const end = campaign.endDate?.toDate ? campaign.endDate.toDate() : new Date(campaign.endDate);
     reset({
@@ -63,11 +80,18 @@ function CampaignsPage() {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
+      // Read banner from separate state — NOT from Zod-parsed data
+      const enriched = {
+        ...data,
+        bannerUrl: bannerState.url || '',
+        bannerPositionX: bannerState.posX ?? 50,
+        bannerPositionY: bannerState.posY ?? 50,
+      };
       if (editingCampaign) {
-        await updateCampaign(editingCampaign.id, data, userProfile);
+        await updateCampaign(editingCampaign.id, enriched, userProfile);
         toastSuccess('Campaign updated');
       } else {
-        await createCampaign(data, userProfile);
+        await createCampaign(enriched, userProfile);
         toastSuccess('Campaign created');
       }
       setShowForm(false);
@@ -77,7 +101,7 @@ function CampaignsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitting, editingCampaign, userProfile, queryClient]);
+  }, [isSubmitting, editingCampaign, userProfile, queryClient, bannerState]);
 
   const handleApprove = useCallback(async (campaign) => {
     try {
@@ -116,7 +140,14 @@ function CampaignsPage() {
       key: 'name', label: 'Campaign', searchable: true,
       render: (val, row) => (
         <div className="flex items-center gap-3">
-          {row.bannerUrl && <img src={row.bannerUrl} alt="" className="w-10 h-10 rounded-lg object-cover" />}
+          {row.bannerUrl && (
+            <img
+              src={row.bannerUrl}
+              alt=""
+              className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+              style={{ objectPosition: `${row.bannerPositionX ?? 50}% ${row.bannerPositionY ?? 50}%` }}
+            />
+          )}
           <div>
             <p className="font-medium text-slate-800">{val}</p>
             <p className="text-xs text-slate-400">{row.code}</p>
@@ -134,16 +165,24 @@ function CampaignsPage() {
       render: (_, row) => (
         <div className="flex items-center gap-1">
           {checkPermission('campaigns.edit') && (
-            <button onClick={() => openEdit(row)} className="btn-icon" title="Edit"><Pencil className="w-4 h-4" /></button>
+            <button onClick={() => openEdit(row)} className="btn-icon" title="Edit">
+              <Pencil className="w-4 h-4" />
+            </button>
           )}
           {isSuperAdmin && row.status === CAMPAIGN_STATUS.PENDING_APPROVAL && (
-            <button onClick={() => handleApprove(row)} className="btn-icon text-emerald-500 hover:bg-emerald-50" title="Approve"><CheckCircle className="w-4 h-4" /></button>
+            <button onClick={() => handleApprove(row)} className="btn-icon text-emerald-500 hover:bg-emerald-50" title="Approve">
+              <CheckCircle className="w-4 h-4" />
+            </button>
           )}
           {isSuperAdmin && row.status === CAMPAIGN_STATUS.ACTIVE && (
-            <button onClick={() => handleSuspend(row)} className="btn-icon text-orange-500 hover:bg-orange-50" title="Suspend"><Ban className="w-4 h-4" /></button>
+            <button onClick={() => handleSuspend(row)} className="btn-icon text-orange-500 hover:bg-orange-50" title="Suspend">
+              <Ban className="w-4 h-4" />
+            </button>
           )}
           {checkPermission('campaigns.delete') && (
-            <button onClick={() => setDeletingCampaign(row)} className="btn-icon text-red-500 hover:bg-red-50" title="Delete"><Trash2 className="w-4 h-4" /></button>
+            <button onClick={() => setDeletingCampaign(row)} className="btn-icon text-red-500 hover:bg-red-50" title="Delete">
+              <Trash2 className="w-4 h-4" />
+            </button>
           )}
         </div>
       ),
@@ -165,12 +204,22 @@ function CampaignsPage() {
             ))}
           </select>
           {checkPermission('campaigns.create') && (
-            <button onClick={openCreate} className="btn-primary"><Plus className="w-4 h-4" /> New Campaign</button>
+            <button onClick={openCreate} className="btn-primary">
+              <Plus className="w-4 h-4" /> New Campaign
+            </button>
           )}
         </div>
       </div>
 
-      <DataTable data={campaignsData?.campaigns || []} columns={columns} isLoading={isLoading} searchPlaceholder="Search campaigns..." exportFilename="campaigns" emptyTitle="No campaigns" emptyDescription="Create your first campaign." />
+      <DataTable
+        data={campaignsData?.campaigns || []}
+        columns={columns}
+        isLoading={isLoading}
+        searchPlaceholder="Search campaigns..."
+        exportFilename="campaigns"
+        emptyTitle="No campaigns"
+        emptyDescription="Create your first campaign."
+      />
 
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={editingCampaign ? 'Edit Campaign' : 'New Campaign'} size="lg">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -190,12 +239,22 @@ function CampaignsPage() {
             <label className="input-label">Description</label>
             <textarea {...register('description')} className="input-field" rows={3} placeholder="Campaign description..." />
           </div>
+
+          {/* Banner — managed outside RHF to bypass Zod stripping */}
           <div>
             <label className="input-label">Banner Image</label>
-            <Controller name="bannerUrl" control={control} render={({ field }) => (
-              <FileUpload value={field.value} onChange={field.onChange} folder={UPLOAD_FOLDERS.CAMPAIGN_BANNER} label="Upload Banner" />
-            )} />
+            <ImagePositionPicker
+              value={bannerState}
+              onChange={setBannerState}
+              aspectRatio="16/6"
+              label="Upload Banner"
+              onUpload={async (file) => {
+                const res = await uploadToCloudinary(file, { folder: UPLOAD_FOLDERS.CAMPAIGN_BANNER });
+                return res.url;
+              }}
+            />
           </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="input-label">Start Date</label>
@@ -225,7 +284,14 @@ function CampaignsPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog isOpen={!!deletingCampaign} onClose={() => setDeletingCampaign(null)} onConfirm={handleDelete} title="Delete Campaign" message={`Delete "${deletingCampaign?.name}"?`} confirmLabel="Delete" />
+      <ConfirmDialog
+        isOpen={!!deletingCampaign}
+        onClose={() => setDeletingCampaign(null)}
+        onConfirm={handleDelete}
+        title="Delete Campaign"
+        message={`Delete "${deletingCampaign?.name}"?`}
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

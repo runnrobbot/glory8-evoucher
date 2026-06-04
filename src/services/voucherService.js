@@ -175,6 +175,8 @@ export async function createVoucher(data, currentUser) {
     qrCode,
     barcode,
     backgroundUrl: data.backgroundUrl || null,
+    bgPositionX: data.bgPositionX ?? 50,
+    bgPositionY: data.bgPositionY ?? 50,
     logoUrl: data.logoUrl || null,
     status: VOUCHER_STATUS.DRAFT,
     designSettings: data.designSettings || {
@@ -258,7 +260,9 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
         maxDiscount: Number(data.maxDiscount) || 0,
         qrCode,
         barcode,
-        backgroundUrl: null,
+        backgroundUrl: data.backgroundUrl || null,
+        bgPositionX: data.bgPositionX ?? 50,
+        bgPositionY: data.bgPositionY ?? 50,
         logoUrl: null,
         status: VOUCHER_STATUS.ACTIVE,
         designSettings: {

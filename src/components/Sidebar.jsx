@@ -3,12 +3,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Users, Building2, Megaphone, Ticket, ScanLine,
-  BarChart3, ScrollText, Settings, ChevronLeft, Layers,
+  BarChart3, ScrollText, Settings, ChevronLeft,
   CreditCard, X,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import useAuthStore from '@/store/authStore';
 import useUIStore from '@/store/uiStore';
 import { PERMISSIONS } from '@/utils/constants';
+import { getSettings } from '@/services/settingsService';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/', permission: null },
@@ -54,6 +56,14 @@ function Sidebar() {
   const { sidebarOpen, sidebarMobileOpen, toggleSidebar, closeMobileSidebar } = useUIStore();
   const location = useLocation();
 
+  // Fetch company logo from settings, fallback to static asset
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettings,
+    staleTime: 10 * 60 * 1000,
+  });
+  const logoSrc = settings?.companyLogo || '/logo-utama.png';
+
   // Close mobile sidebar on navigation
   useEffect(() => {
     closeMobileSidebar();
@@ -80,7 +90,12 @@ function Sidebar() {
       {/* Logo */}
       <div className={`flex items-center gap-3 px-4 h-16 border-b border-slate-100 flex-shrink-0 ${sidebarOpen ? '' : 'justify-center'}`}>
         <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center bg-white">
-          <img src="/logo-utama.png" alt="Glory8 Logo" className="w-9 h-9 object-contain" />
+          <img
+            src={logoSrc}
+            alt="Glory8 Logo"
+            className="w-9 h-9 object-contain"
+            onError={(e) => { e.target.src = '/logo-utama.png'; }}
+          />
         </div>
         {sidebarOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
