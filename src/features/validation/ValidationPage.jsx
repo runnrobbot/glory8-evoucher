@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ScanLine, Search, CheckCircle, XCircle, AlertCircle, Clock, Camera, Keyboard } from 'lucide-react';
+import { ScanLine, Search, CheckCircle, XCircle, AlertCircle, Clock } from 'lucide-react';
 import { validateVoucher } from '@/services/voucherService';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate, formatCurrency } from '@/utils/formatters';
@@ -19,14 +19,9 @@ const RESULT_CONFIG = {
 };
 
 function ValidationPage() {
-  const [mode, setMode] = useState('code'); // 'code' | 'scan'
   const [code, setCode] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const [result, setResult] = useState(null);
-
-  const scannerRef = useRef(null);      // DOM div ref
-  const scannerObjRef = useRef(null);   // Html5Qrcode instance
-  const isRunningRef = useRef(false);   // Guard — true only after scanner.start() resolves
 
   const handleValidate = useCallback(async (voucherCode) => {
     if (!voucherCode?.trim() || isValidating) return;
@@ -47,165 +42,46 @@ function ValidationPage() {
     handleValidate(code);
   }, [code, handleValidate]);
 
-  // ── QR Scanner lifecycle ─────────────────────────────────────────────────
-  //
-  // ROOT CAUSE OF THE CRASH:
-  //   scanner.stop() was called in the cleanup BEFORE scanner.start() had
-  //   resolved (async race). Html5Qrcode throws "Cannot stop, scanner is not
-  //   running or paused" when stop() is called before start() completes.
-  //   This unhandled error propagated to React Router's error boundary and
-  //   crashed the entire page.
-  //
-  // FIX:
-  //   isRunningRef tracks whether start() has successfully returned.
-  //   cleanup only calls stop() when isRunningRef.current === true.
-  //   A separate `cancelled` flag prevents start() from running after
-  //   the effect has already been torn down (StrictMode double-invoke).
-  //
-  useEffect(() => {
-    if (mode !== 'scan') {
-      // Switching away from scan — stop only if actually running
-      if (scannerObjRef.current && isRunningRef.current) {
-        scannerObjRef.current.stop().catch(() => {});
-        isRunningRef.current = false;
-        scannerObjRef.current = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const startScanner = async () => {
-      try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-
-        // StrictMode may have cancelled this effect already
-        if (cancelled) return;
-
-        const scanner = new Html5Qrcode('qr-reader');
-        scannerObjRef.current = scanner;
-
-        await scanner.start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          async (decodedText) => {
-            // Stop the camera first, then validate
-            if (isRunningRef.current) {
-              isRunningRef.current = false;
-              try { await scanner.stop(); } catch { /* ignore */ }
-            }
-            handleValidate(decodedText);
-          },
-          () => { /* QR not found in frame — ignore */ }
-        );
-
-        // Mark as running ONLY after start() resolves
-        if (!cancelled) {
-          isRunningRef.current = true;
-        } else {
-          // Effect was cancelled while start() was in-flight — stop immediately
-          scanner.stop().catch(() => {});
-        }
-      } catch (err) {
-        if (!cancelled) {
-          toastError('Camera access denied or not available');
-          setMode('code');
-        }
-      }
-    };
-
-    startScanner();
-
-    return () => {
-      cancelled = true;
-      // Safe to call stop only if scanner has confirmed it started
-      if (scannerObjRef.current && isRunningRef.current) {
-        scannerObjRef.current.stop().catch(() => {});
-        isRunningRef.current = false;
-      }
-      scannerObjRef.current = null;
-    };
-  // handleValidate is stable (useCallback with isValidating dep) — ok to include
-  }, [mode]); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1 className="page-title">Validate Voucher</h1>
-          <p className="page-subtitle">Verify voucher code or scan QR</p>
+          <p className="page-subtitle">Verify a voucher by its code</p>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto">
-        {/* Mode Toggle */}
-        <div className="flex gap-2 mb-6 p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setMode('code')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
-              mode === 'code' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Keyboard className="w-4 h-4" /> Enter Code
-          </button>
-          <button
-            onClick={() => setMode('scan')}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
-              mode === 'scan' ? 'bg-white shadow-sm text-primary-700' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Camera className="w-4 h-4" /> Scan QR
-          </button>
-        </div>
-
         {/* Code Input */}
-        {mode === 'code' && (
-          <motion.form
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            onSubmit={handleCodeSubmit}
-            className="card p-6 mb-6"
-          >
-            <div className="flex gap-3">
-              <div className="flex-1 relative">
-                <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="Enter voucher code (e.g., GL8-2026-000001)"
-                  className="input-field pl-11 py-3 text-lg font-mono tracking-wider"
-                  autoFocus
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!code.trim() || isValidating}
-                className="btn-primary px-6 py-3"
-              >
-                {isValidating
-                  ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : <Search className="w-5 h-5" />
-                }
-              </button>
+        <motion.form
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          onSubmit={handleCodeSubmit}
+          className="card p-6 mb-6"
+        >
+          <div className="flex gap-3">
+            <div className="flex-1 relative">
+              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+              <input
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                placeholder="Enter voucher code (e.g., GL8-2026-000001)"
+                className="input-field pl-11 py-3 text-lg font-mono tracking-wider"
+                autoFocus
+              />
             </div>
-          </motion.form>
-        )}
-
-        {/* QR Scanner */}
-        {mode === 'scan' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card p-6 mb-6">
-            {/* html5-qrcode mounts its video feed inside this div.
-                A min-height + width ensures the camera surface has room to render. */}
-            <div
-              id="qr-reader"
-              ref={scannerRef}
-              className="rounded-xl overflow-hidden mx-auto w-full max-w-sm min-h-[300px] bg-slate-900/5"
-            />
-            <p className="text-sm text-slate-500 text-center mt-3">
-              Arahkan kamera ke QR code pada voucher
-            </p>
-          </motion.div>
-        )}
+            <button
+              type="submit"
+              disabled={!code.trim() || isValidating}
+              className="btn-primary px-6 py-3"
+            >
+              {isValidating
+                ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <Search className="w-5 h-5" />
+              }
+            </button>
+          </div>
+        </motion.form>
 
         {/* Result */}
         <AnimatePresence mode="wait">

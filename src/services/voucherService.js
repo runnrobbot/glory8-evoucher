@@ -17,26 +17,9 @@ import {
   writeBatch,
   increment,
 } from 'firebase/firestore';
-import QRCode from 'qrcode';
 import { COLLECTIONS, DEFAULT_PAGE_SIZE, VOUCHER_STATUS, AUDIT_ACTIONS, AUDIT_MODULES } from '@/utils/constants';
 import { logAudit } from '@/utils/auditLogger';
 import { sanitizeObject } from '@/utils/sanitize';
-
-/**
- * Generate QR Code as data URL.
- */
-async function generateQRCode(data) {
-  try {
-    return await QRCode.toDataURL(data, {
-      width: 320,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#000000', light: '#FFFFFF' },
-    });
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Get the next voucher sequence number atomically.
@@ -133,8 +116,6 @@ export async function createVoucher(data, currentUser) {
   const startSeq = await getNextSequence(1);
   const code = generateVoucherCode(prefix, year, startSeq);
 
-  const qrCode = await generateQRCode(code);
-
   const voucherData = {
     name: sanitized.name,
     code,
@@ -150,20 +131,11 @@ export async function createVoucher(data, currentUser) {
     remainingUsage: Number(data.usageLimit),
     minPurchase: Number(data.minPurchase) || 0,
     maxDiscount: Number(data.maxDiscount) || 0,
-    qrCode,
     backgroundUrl: data.backgroundUrl || null,
     bgPositionX: data.bgPositionX ?? 50,
     bgPositionY: data.bgPositionY ?? 50,
     logoUrl: data.logoUrl || null,
     status: VOUCHER_STATUS.DRAFT,
-    designSettings: data.designSettings || {
-      primaryColor: '#0F766E',
-      secondaryColor: '#14B8A6',
-      accentColor: '#22C55E',
-      fontFamily: 'Inter',
-      fontSize: '14px',
-      qrPosition: { x: 50, y: 50 },
-    },
     isDeleted: false,
     deletedAt: null,
     deletedBy: null,
@@ -216,7 +188,6 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
     for (let i = batchStart; i < batchEnd; i++) {
       const seq = startSeq + i;
       const code = generateVoucherCode(prefix, year, seq);
-      const qrCode = await generateQRCode(code);
 
       const voucherData = {
         name: `${sanitized.name} #${seq}`,
@@ -233,20 +204,11 @@ export async function bulkGenerateVouchers(data, quantity, currentUser) {
         remainingUsage: Number(data.usageLimit),
         minPurchase: Number(data.minPurchase) || 0,
         maxDiscount: Number(data.maxDiscount) || 0,
-        qrCode,
         backgroundUrl: data.backgroundUrl || null,
         bgPositionX: data.bgPositionX ?? 50,
         bgPositionY: data.bgPositionY ?? 50,
         logoUrl: null,
         status: VOUCHER_STATUS.ACTIVE,
-        designSettings: {
-          primaryColor: '#0F766E',
-          secondaryColor: '#14B8A6',
-          accentColor: '#22C55E',
-          fontFamily: 'Inter',
-          fontSize: '14px',
-          qrPosition: { x: 50, y: 50 },
-        },
         isDeleted: false,
         deletedAt: null,
         deletedBy: null,

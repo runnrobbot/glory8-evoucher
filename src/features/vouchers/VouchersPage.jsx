@@ -16,7 +16,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { voucherSchema, bulkGenerateSchema } from '@/utils/validators';
 import { VOUCHER_STATUS_LABELS } from '@/utils/constants';
-import { formatDate, formatCurrency, getExpirationLabel } from '@/utils/formatters';
+import { formatCurrency, getExpirationLabel } from '@/utils/formatters';
 import { copyToClipboard, shareVoucherToWhatsApp } from '@/utils/exportUtils';
 import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
 
@@ -606,13 +606,13 @@ function VouchersPage() {
               ref={voucherCardRef}
               className="rounded-2xl relative overflow-hidden"
               style={{
-                aspectRatio: '16 / 7',
+                aspectRatio: '21 / 7',
                 background: showPreview.backgroundUrl
                   ? '#ffffff'
                   : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
               }}
             >
-              {/* Background image layer — shown at original brightness (no scrim) */}
+              {/* Background image layer */}
               {showPreview.backgroundUrl && (
                 <img
                   src={showPreview.backgroundUrl}
@@ -625,6 +625,18 @@ function VouchersPage() {
                 />
               )}
 
+              {/* Readability scrim — very light on the left only so text stays
+                  readable without killing the banner brightness. */}
+              {showPreview.backgroundUrl && (
+                <div
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 55%, rgba(0,0,0,0.05) 100%)',
+                  }}
+                />
+              )}
+
               {/* Decorative circles (only on the plain gradient, not over a banner) */}
               {!showPreview.backgroundUrl && (
                 <>
@@ -633,87 +645,41 @@ function VouchersPage() {
                 </>
               )}
 
-              {/* ── Content layout ──────────────────────────────────────────
-                  text color adapts: dark on a (light) banner, white on gradient.
-                  Layout (typical voucher):
-                    • top-left: voucher name + logo
-                    • below:    big discount %
-                    • below:    voucher code
-                    • below:    smaller info lines
-                  QR sits on the right, vertically centered.                    */}
-              {(() => {
-                const hasBg = !!showPreview.backgroundUrl;
-                const heading = hasBg ? 'text-slate-900' : 'text-white';
-                const sub = hasBg ? 'text-slate-600' : 'text-white/80';
-                const faint = hasBg ? 'text-slate-500' : 'text-white/70';
-                const accent = hasBg ? 'text-primary-700' : 'text-white';
-                const shadow = hasBg ? {} : { textShadow: '0 1px 3px rgba(0,0,0,0.45)' };
+              {/* ── Content layout ────────────────────────────────────────── */}
+              <div
+                className="relative z-10 h-full px-6 sm:px-8 py-4 flex flex-col text-white"
+                style={{ textShadow: '0 1px 6px rgba(0,0,0,0.55)' }}
+              >
+                {/* Top row: VOUCHER label + logo */}
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-white/80">Voucher</p>
+                  <img
+                    src={companyLogo}
+                    alt="Logo"
+                    crossOrigin="anonymous"
+                    className="h-10 sm:h-12 w-auto object-contain flex-shrink-0"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                </div>
 
-                return (
-                  <div className="relative z-10 h-full p-5 sm:p-6 flex items-stretch gap-4">
-                    {/* Left / main column */}
-                    <div className="flex-1 min-w-0 flex flex-col" style={shadow}>
-                      {/* Top-left: name + logo */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className={`text-[10px] uppercase tracking-[0.3em] ${faint} mb-0.5`}>Voucher</p>
-                          <h3 className={`text-lg sm:text-xl font-bold leading-tight truncate ${heading}`}>
-                            {showPreview.name}
-                          </h3>
-                        </div>
-                        <img
-                          src={companyLogo}
-                          alt="Logo"
-                          crossOrigin="anonymous"
-                          className="h-8 w-auto object-contain flex-shrink-0"
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                      </div>
+                {/* Big discount — grows to fill remaining height */}
+                <div className="flex-1 flex flex-col justify-center">
+                  <p className="text-5xl sm:text-6xl font-black leading-none text-white">
+                    {showPreview.discountType === 'percentage'
+                      ? `${showPreview.value}%`
+                      : formatCurrency(showPreview.value)}
+                  </p>
+                  <p className="text-xs sm:text-sm font-semibold uppercase mt-1 text-white/80">Diskon</p>
+                </div>
 
-                      {/* Big discount */}
-                      <p className={`text-4xl sm:text-5xl font-black leading-none mt-2 ${accent}`}>
-                        {showPreview.discountType === 'percentage'
-                          ? `${showPreview.value}%`
-                          : formatCurrency(showPreview.value)}
-                        <span className={`text-sm font-semibold uppercase ml-2 ${sub}`}>Diskon</span>
-                      </p>
-
-                      {/* Voucher code */}
-                      <div className="mt-2">
-                        <p className={`text-[10px] uppercase tracking-wide ${faint}`}>Kode</p>
-                        <p className={`font-mono text-base sm:text-lg font-bold tracking-widest ${heading}`}>
-                          {showPreview.code}
-                        </p>
-                      </div>
-
-                      {/* Smaller info lines */}
-                      <div className={`mt-auto pt-2 space-y-0.5 ${sub}`}>
-                        <p className="text-[11px]">Campaign: {showPreview.campaignName}</p>
-                        <p className="text-[11px]">Berlaku s.d.: {formatDate(showPreview.expiredDate)}</p>
-                        {showPreview.minPurchase > 0 && (
-                          <p className="text-[11px]">Min. belanja: {formatCurrency(showPreview.minPurchase)}</p>
-                        )}
-                        {showPreview.terms && (
-                          <p className="text-[10px] italic line-clamp-1 opacity-80">{showPreview.terms}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right: QR code, vertically centered */}
-                    {showPreview.qrCode && (
-                      <div className="flex flex-col items-center justify-center gap-1.5 flex-shrink-0">
-                        <img
-                          src={showPreview.qrCode}
-                          alt="QR Code"
-                          crossOrigin="anonymous"
-                          className="w-24 h-24 sm:w-28 sm:h-28 block"
-                        />
-                        <p className={`text-[9px] ${faint}`} style={shadow}>Scan untuk validasi</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                {/* Voucher code — pinned to bottom */}
+                <div>
+                  <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-white/80">Kode</p>
+                  <p className="font-mono text-base sm:text-xl font-bold tracking-widest text-white">
+                    {showPreview.code}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Action buttons */}
