@@ -643,7 +643,6 @@ function VouchersPage() {
             >
               <div
                 ref={voucherCardRef}
-                data-voucher-card
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -652,7 +651,7 @@ function VouchersPage() {
                   height: `${VOUCHER_H}px`,
                   transform: `scale(${previewScale})`,
                   transformOrigin: 'top left',
-                  borderRadius: `${32 / previewScale}px`,
+                  borderRadius: '40px',
                   overflow: 'hidden',
                   background: showPreview.backgroundUrl
                     ? '#ffffff'
@@ -719,20 +718,20 @@ function VouchersPage() {
                   crossOrigin="anonymous"
                   style={{
                     position: 'absolute',
-                    top: '70px',
+                    top: '50px',
                     left: '50%',
                     transform: 'translateX(-50%)',
-                    height: '120px',
+                    height: '110px',
                     width: 'auto',
                     objectFit: 'contain',
                   }}
                   onError={(e) => { e.target.style.display = 'none'; }}
                 />
 
-                {/* VOUCHER label */}
+                {/* VOUCHER label — tight below logo */}
                 <p style={{
                   position: 'absolute',
-                  top: '220px',
+                  top: '170px',
                   left: 0, right: 0,
                   margin: 0,
                   fontSize: '52px',
@@ -745,14 +744,13 @@ function VouchersPage() {
                   Voucher
                 </p>
 
-                {/* Big discount value — vertically centred */}
+                {/* Big discount value */}
                 <p style={{
                   position: 'absolute',
-                  top: '410px',
+                  top: '244px',
                   left: 0, right: 0,
                   margin: 0,
-                  transform: 'translateY(-50%)',
-                  fontSize: '230px',
+                  fontSize: '180px',
                   fontWeight: 900,
                   lineHeight: 1,
                   color: '#ffffff',
@@ -762,10 +760,10 @@ function VouchersPage() {
                     : formatCurrency(showPreview.value)}
                 </p>
 
-                {/* DISKON label */}
+                {/* DISKON label — top = 244 + 180 + 12px gap */}
                 <p style={{
                   position: 'absolute',
-                  top: '548px',
+                  top: '480px',
                   left: 0, right: 0,
                   margin: 0,
                   fontSize: '46px',
@@ -778,10 +776,10 @@ function VouchersPage() {
                   Diskon
                 </p>
 
-                {/* Divider */}
+                {/* Divider — top = 436 + 46 + 30px gap */}
                 <div style={{
                   position: 'absolute',
-                  top: '640px',
+                  top: '556px',
                   left: '50%',
                   transform: 'translateX(-50%)',
                   width: '150px',
@@ -792,7 +790,7 @@ function VouchersPage() {
                 {/* KODE label */}
                 <p style={{
                   position: 'absolute',
-                  top: '664px',
+                  top: '574px',
                   left: 0, right: 0,
                   margin: 0,
                   fontSize: '30px',
@@ -805,10 +803,10 @@ function VouchersPage() {
                   Kode
                 </p>
 
-                {/* Code value */}
+                {/* Code value — top = 530 + 30 + 16px gap */}
                 <p style={{
                   position: 'absolute',
-                  top: '702px',
+                  top: '620px',
                   left: 0, right: 0,
                   margin: 0,
                   fontSize: '54px',

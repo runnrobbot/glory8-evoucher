@@ -150,21 +150,33 @@ export async function copyToClipboard(text) {
 
 /**
  * Render a DOM element to a PNG Blob via html2canvas at its TRUE (untransformed)
- * size. The voucher card is rendered at full resolution (e.g. 1600×800) but
- * visually scaled down with a CSS transform for the on-screen preview. We pass
- * the real width/height and neutralise the transform during capture so the
- * exported image always matches the design canvas exactly.
+ * size. The voucher card is laid out at full resolution (1600×800) but visually
+ * scaled down with a CSS transform for the on-screen preview. html2canvas does
+ * not reliably honour a root-level transform, so we temporarily strip the
+ * transform from the live element (making it render at full size), capture, then
+ * restore it. This guarantees the exported image matches the design canvas.
  * Returns null on failure so callers can fall back to text-only sharing.
  * @param {HTMLElement} element
  * @returns {Promise<Blob|null>}
  */
 export async function captureElementToBlob(element) {
   if (!element) return null;
+
+  // Save inline styles we're about to mutate so we can restore them.
+  const prev = {
+    transform: element.style.transform,
+    transformOrigin: element.style.transformOrigin,
+  };
+
   try {
-    // The element's layout box is its full design size; getBoundingClientRect
-    // would return the scaled size, so use offsetWidth/Height (layout size).
+    // offsetWidth/Height return the layout size (unaffected by transform),
+    // i.e. the true design dimensions (1600×800).
     const width = element.offsetWidth;
     const height = element.offsetHeight;
+
+    // Render at full size for the capture.
+    element.style.transform = 'none';
+    element.style.transformOrigin = 'top left';
 
     const canvas = await html2canvas(element, {
       useCORS: true,
@@ -176,19 +188,14 @@ export async function captureElementToBlob(element) {
       windowWidth: width,
       windowHeight: height,
       scale: 1,
-      // Neutralise the preview's scale transform in the cloned document so the
-      // capture is rendered at full resolution.
-      onclone: (doc) => {
-        const clone = doc.querySelector('[data-voucher-card]');
-        if (clone) {
-          clone.style.transform = 'none';
-          clone.style.position = 'static';
-        }
-      },
     });
     return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   } catch {
     return null;
+  } finally {
+    // Always restore the preview scale.
+    element.style.transform = prev.transform;
+    element.style.transformOrigin = prev.transformOrigin;
   }
 }
 
