@@ -606,7 +606,7 @@ function VouchersPage() {
               ref={voucherCardRef}
               className="rounded-2xl relative overflow-hidden"
               style={{
-                aspectRatio: '21 / 7',
+                aspectRatio: '16 / 7',
                 background: showPreview.backgroundUrl
                   ? '#ffffff'
                   : 'linear-gradient(135deg, #0F766E 0%, #134e4a 100%)',
@@ -647,35 +647,33 @@ function VouchersPage() {
 
               {/* ── Content layout ────────────────────────────────────────── */}
               <div
-                className="relative z-10 h-full px-6 sm:px-8 py-4 flex flex-col text-white"
+                className="relative z-10 h-full px-6 sm:px-8 py-4 flex flex-col items-center justify-between text-white text-center"
                 style={{ textShadow: '0 1px 6px rgba(0,0,0,0.55)' }}
               >
-                {/* Top row: VOUCHER label + logo */}
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-white/80">Voucher</p>
-                  <img
-                    src={companyLogo}
-                    alt="Logo"
-                    crossOrigin="anonymous"
-                    className="h-10 sm:h-12 w-auto object-contain flex-shrink-0"
-                    onError={(e) => { e.target.style.display = 'none'; }}
-                  />
-                </div>
+                {/* Logo — centre top */}
+                <img
+                  src={companyLogo}
+                  alt="Logo"
+                  crossOrigin="anonymous"
+                  className="h-10 sm:h-12 w-auto object-contain"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
 
-                {/* Big discount — grows to fill remaining height */}
-                <div className="flex-1 flex flex-col justify-center">
+                {/* VOUCHER label + discount value */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <p className="text-base sm:text-lg font-bold uppercase tracking-[0.35em] text-white/80">Voucher</p>
                   <p className="text-5xl sm:text-6xl font-black leading-none text-white">
                     {showPreview.discountType === 'percentage'
                       ? `${showPreview.value}%`
                       : formatCurrency(showPreview.value)}
                   </p>
-                  <p className="text-xs sm:text-sm font-semibold uppercase mt-1 text-white/80">Diskon</p>
+                  <p className="text-base sm:text-lg font-bold uppercase tracking-[0.2em] text-white/80">Diskon</p>
                 </div>
 
-                {/* Voucher code — pinned to bottom */}
-                <div>
-                  <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-white/80">Kode</p>
-                  <p className="font-mono text-base sm:text-xl font-bold tracking-widest text-white">
+                {/* KODE — centre bottom, smaller */}
+                <div className="flex flex-col items-center gap-0.5">
+                  <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.3em] text-white/70">Kode</p>
+                  <p className="font-mono text-sm sm:text-base font-bold tracking-widest text-white">
                     {showPreview.code}
                   </p>
                 </div>
