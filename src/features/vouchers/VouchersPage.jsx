@@ -21,9 +21,11 @@ import { copyToClipboard } from '@/utils/exportUtils';
 import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Share via WhatsApp — opens wa.me broadcast link, no phone number required.
+// Build a clean, plain-text WhatsApp message for a voucher.
+// No decorative emoji (avoids broken-glyph rendering) and no WhatsApp markdown
+// markers (*bold* / _italic_) — those showed up literally for the recipient.
 // ─────────────────────────────────────────────────────────────────────────────
-function shareVoucher(voucher) {
+function buildVoucherMessage(voucher) {
   const value = voucher.discountType === 'percentage'
     ? `${voucher.value}%`
     : `Rp ${Number(voucher.value).toLocaleString('id-ID')}`;
@@ -31,18 +33,24 @@ function shareVoucher(voucher) {
     ? voucher.expiredDate.toDate().toLocaleDateString('id-ID')
     : new Date(voucher.expiredDate).toLocaleDateString('id-ID');
 
-  const text = [
-    `🎟️ *${voucher.name}*`,
+  return [
+    voucher.name,
     ``,
-    `Diskon: *${value}*`,
-    `Kode: \`${voucher.code}\``,
+    `Diskon: ${value}`,
+    `Kode: ${voucher.code}`,
     `Berlaku s.d.: ${expiry}`,
     voucher.description ? `\n${voucher.description}` : '',
-    voucher.terms ? `\n_${voucher.terms}_` : '',
+    voucher.terms ? `\n${voucher.terms}` : '',
   ].filter(Boolean).join('\n');
+}
 
-  // wa.me without phone → WhatsApp share sheet (no contact field prompt)
-  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+// Normalize an Indonesian phone number to wa.me international format (no +, no
+// leading 0; local "08xx" → "628xx"). Returns '' if no digits remain.
+function normalizePhone(raw) {
+  let digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0')) digits = `62${digits.slice(1)}`;
+  return digits;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,6 +180,10 @@ function VouchersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [campaignFilter, setCampaignFilter] = useState('');
+
+  // ── WhatsApp share — reveal phone field, then open wa.me on submit ────────
+  const [showWaField, setShowWaField] = useState(false);
+  const [waPhone, setWaPhone] = useState('');
 
   // ── Background state — OUTSIDE react-hook-form to bypass Zod stripping ───
   // BUG FIX: Zod's .parse() strips keys not declared in the schema, so any
@@ -331,6 +343,23 @@ function VouchersPage() {
     }
   }, [isSubmitting, campaigns, userProfile, queryClient, bulkBg]);
 
+  // Close the preview modal and reset the WhatsApp share field
+  const closePreview = useCallback(() => {
+    setShowPreview(null);
+    setShowWaField(false);
+    setWaPhone('');
+  }, []);
+
+  // Open WhatsApp to the entered number with the prefilled voucher message.
+  // An empty number falls back to the WhatsApp contact picker.
+  const sendWhatsApp = useCallback(() => {
+    if (!showPreview) return;
+    const text = buildVoucherMessage(showPreview);
+    const phone = normalizePhone(waPhone);
+    const base = phone ? `https://wa.me/${phone}` : 'https://wa.me/';
+    window.open(`${base}?text=${encodeURIComponent(text)}`, '_blank');
+  }, [showPreview, waPhone]);
+
   const handleDelete = useCallback(async () => {
     if (!deletingVoucher) return;
     try {
@@ -379,7 +408,7 @@ function VouchersPage() {
       key: 'actions', label: '', sortable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1">
-          <button onClick={() => setShowPreview(row)} className="btn-icon" title="Preview">
+          <button onClick={() => { setShowWaField(false); setWaPhone(''); setShowPreview(row); }} className="btn-icon" title="Preview">
             <Eye className="w-4 h-4" />
           </button>
           {checkPermission('vouchers.edit') && (
@@ -546,7 +575,7 @@ function VouchersPage() {
       {/* ── Voucher Preview Modal ─────────────────────────────────────────── */}
       <Modal
         isOpen={!!showPreview}
-        onClose={() => setShowPreview(null)}
+        onClose={closePreview}
         title="Voucher Preview"
         size="lg"
       >
@@ -659,13 +688,42 @@ function VouchersPage() {
                 <Copy className="w-4 h-4" /> Salin Kode
               </button>
               <button
-                onClick={() => shareVoucher(showPreview)}
+                onClick={() => setShowWaField((v) => !v)}
                 className="btn-primary flex-1"
                 style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
               >
                 <MessageCircle className="w-4 h-4" /> Share WhatsApp
               </button>
             </div>
+
+            {/* WhatsApp phone field — revealed after clicking Share WhatsApp */}
+            {showWaField && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <div>
+                  <label className="input-label">Nomor WhatsApp Tujuan</label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    value={waPhone}
+                    onChange={(e) => setWaPhone(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') sendWhatsApp(); }}
+                    className="input-field"
+                    placeholder="08xxxxxxxxxx"
+                    autoFocus
+                  />
+                  <p className="text-xs text-slate-400 mt-1">
+                    Kosongkan untuk memilih kontak langsung di WhatsApp.
+                  </p>
+                </div>
+                <button
+                  onClick={sendWhatsApp}
+                  className="btn-primary w-full"
+                  style={{ background: 'linear-gradient(135deg, #25D366, #128C7E)' }}
+                >
+                  <MessageCircle className="w-4 h-4" /> Kirim ke WhatsApp
+                </button>
+              </div>
+            )}
           </div>
         )}
       </Modal>

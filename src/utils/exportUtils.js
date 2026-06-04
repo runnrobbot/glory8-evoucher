@@ -195,14 +195,6 @@ export function printElement(element) {
 }
 
 /**
- * Share via WhatsApp.
- */
-export function shareViaWhatsApp(text, url) {
-  const message = encodeURIComponent(`${text}\n\n${url || ''}`);
-  window.open(`https://wa.me/?text=${message}`, '_blank');
-}
-
-/**
  * Copy text to clipboard.
  */
 export async function copyToClipboard(text) {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Menu, Bell, Search, LogOut, User, ChevronDown, Settings,
+  Menu, Bell, LogOut, User, ChevronDown, Settings,
   Info, CheckCircle, AlertTriangle, AlertCircle, Check, CheckCheck,
 } from 'lucide-react';
 import useAuthStore from '@/store/authStore';
@@ -31,7 +31,7 @@ const TYPE_COLORS = {
 function Topbar() {
   const navigate = useNavigate();
   const { user, userProfile, logout: storeLogout } = useAuthStore();
-  const { toggleMobileSidebar, toggleGlobalSearch } = useUIStore();
+  const { toggleMobileSidebar } = useUIStore();
   const { unreadCount, setUnreadCount } = useNotificationStore();
 
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -100,18 +100,6 @@ function Topbar() {
         <div className="flex items-center gap-3">
           <button onClick={toggleMobileSidebar} className="btn-icon lg:hidden">
             <Menu className="w-5 h-5" />
-          </button>
-
-          {/* Search trigger */}
-          <button
-            onClick={toggleGlobalSearch}
-            className="hidden sm:flex items-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl text-sm text-slate-400 transition-colors min-w-[240px]"
-          >
-            <Search className="w-4 h-4" />
-            <span>Search...</span>
-            <kbd className="ml-auto text-[10px] font-medium bg-white text-slate-400 px-1.5 py-0.5 rounded border border-slate-200">
-              ⌘K
-            </kbd>
           </button>
         </div>
 

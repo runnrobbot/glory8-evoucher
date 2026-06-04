@@ -25,11 +25,6 @@ const useUIStore = create((set) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
-
-  // Global search
-  globalSearchOpen: false,
-  toggleGlobalSearch: () => set((state) => ({ globalSearchOpen: !state.globalSearchOpen })),
-  closeGlobalSearch: () => set({ globalSearchOpen: false }),
 }));
 
 export default useUIStore;

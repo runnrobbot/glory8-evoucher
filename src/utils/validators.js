@@ -129,6 +129,8 @@ export const redeemSchema = z.object({
 export const settingsSchema = z.object({
   companyName: requiredString('Company Name'),
   companyLogo: optionalString,
+  logoPositionX: z.coerce.number().min(0).max(100).default(50),
+  logoPositionY: z.coerce.number().min(0).max(100).default(50),
   voucherPrefix: requiredString('Voucher Prefix')
     .max(5, 'Prefix max 5 characters')
     .regex(/^[A-Z0-9]+$/, 'Only uppercase letters and numbers'),

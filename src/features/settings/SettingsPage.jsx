@@ -1,15 +1,17 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Save, Settings as SettingsIcon } from 'lucide-react';
 import { getSettings, updateSettings } from '@/services/settingsService';
 import { settingsSchema } from '@/utils/validators';
-import FileUpload from '@/components/ui/FileUpload';
+import ImagePositionPicker from '@/components/ui/ImagePositionPicker';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { toastSuccess, toastError } from '@/components/ui/Toast';
-import { UPLOAD_FOLDERS } from '@/lib/cloudinary';
+import { uploadToCloudinary, UPLOAD_FOLDERS } from '@/lib/cloudinary';
 import { motion } from 'framer-motion';
+
+const DEFAULT_LOGO = { url: '', posX: 50, posY: 50 };
 
 function SettingsPage() {
   const queryClient = useQueryClient();
@@ -21,20 +23,43 @@ function SettingsPage() {
     staleTime: 10 * 60 * 1000,
   });
 
-  const { register, handleSubmit, control, formState: { errors } } = useForm({
+  // ── Logo state — OUTSIDE react-hook-form to bypass Zod stripping ──────────
+  const [logoState, setLogoState] = useState(DEFAULT_LOGO);
+
+  const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: zodResolver(settingsSchema),
-    values: settings ? { companyName: settings.companyName, companyLogo: settings.companyLogo || '', voucherPrefix: settings.voucherPrefix } : undefined,
+    values: settings
+      ? { companyName: settings.companyName, voucherPrefix: settings.voucherPrefix }
+      : undefined,
   });
+
+  // Restore saved logo state once settings load
+  useEffect(() => {
+    if (settings) {
+      setLogoState({
+        url: settings.companyLogo || '',
+        posX: settings.logoPositionX ?? 50,
+        posY: settings.logoPositionY ?? 50,
+      });
+    }
+  }, [settings]);
 
   const onSubmit = useCallback(async (data) => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
-      await updateSettings(data);
+      // Read logo from separate state — NOT from Zod-parsed data
+      const enriched = {
+        ...data,
+        companyLogo: logoState.url || null,
+        logoPositionX: logoState.posX ?? 50,
+        logoPositionY: logoState.posY ?? 50,
+      };
+      await updateSettings(enriched);
       toastSuccess('Settings saved');
       queryClient.invalidateQueries({ queryKey: ['settings'] });
     } catch (error) { toastError(error.message); } finally { setIsSubmitting(false); }
-  }, [isSubmitting, queryClient]);
+  }, [isSubmitting, queryClient, logoState]);
 
   if (isLoading) return <LoadingSpinner fullPage />;
 
@@ -61,9 +86,16 @@ function SettingsPage() {
 
           <div>
             <label className="input-label">Company Logo</label>
-            <Controller name="companyLogo" control={control} render={({ field }) => (
-              <FileUpload value={field.value} onChange={field.onChange} folder={UPLOAD_FOLDERS.COMPANY_LOGO} label="Upload Logo" />
-            )} />
+            <ImagePositionPicker
+              value={logoState}
+              onChange={setLogoState}
+              aspectRatio="1/1"
+              label="Upload Logo"
+              onUpload={async (file) => {
+                const res = await uploadToCloudinary(file, { folder: UPLOAD_FOLDERS.COMPANY_LOGO });
+                return res.url;
+              }}
+            />
           </div>
 
           <div>
